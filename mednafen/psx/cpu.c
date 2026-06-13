@@ -32,6 +32,10 @@
 #include "cpu.h"
 #include "psx_mem.h"
 
+#ifdef PSXPORT_HOOKS
+#include "psxport_hooks.h"
+#endif
+
 #include "../state_helpers.h"
 #include "../math_ops.h"
 #include "../mednafen.h"
@@ -304,6 +308,13 @@ void CPU_LightrecClear(uint32_t addr, uint32_t size)
 #endif
 
 const uint8_t *PSX_LoadExpansion1(void);
+
+#ifdef PSXPORT_HOOKS
+uint32_t* psxport_cpu_gpr(void)
+{
+   return s_cpu.GPR_full;
+}
+#endif
 
 void CPU_Power(PS_CPU *self)
 {
@@ -912,8 +923,27 @@ static int32_t CPU_RunReal(PS_CPU *self, int32_t timestamp_in)
 
    instr = ReadInstruction(&timestamp, PC);
 
+#ifdef PSXPORT_HOOKS
+   if(MDFN_UNLIKELY(psxport_cov_bitmap != NULL))
+   {
+    const uint32_t cov_word = (PC & 0x1FFFFF) >> 2;
+    psxport_cov_bitmap[cov_word >> 3] |= 1 << (cov_word & 7);
+   }
+   if(MDFN_UNLIKELY(psxport_hook_count != 0))
+   {
+    uint32_t psxport_target;
+    if(psxport_on_pc(PC, instr, s_cpu.GPR_full, &psxport_target))
+    {
+     /* native override consumed this code path; resume at the target */
+     PC = psxport_target;
+     new_PC = PC + 4;
+     BDBT = 0;
+     continue;
+    }
+   }
+#endif
 
-   // 
+   //
    // Instruction decode
    //
    opf = instr & 0x3F;

@@ -21,6 +21,10 @@
 #include "timer.h"
 #include "FastFIFO.h"
 
+#ifdef PSXPORT_HOOKS
+#include "psxport_hooks.h"
+#endif
+
 #include <retro_miscellaneous.h>
 
 #if defined(__SSE2__)
@@ -1425,6 +1429,12 @@ static void ProcessFIFO(uint32_t in_count)
       Command_FBRead(&GPU, CB);
    else
    {
+#ifdef PSXPORT_HOOKS
+      /* psxport: tap polygon GP0 commands (verts/uv/color in CB) for the
+         reprojecting renderer, before rasterization. */
+      if (psxport_gpu_capture && cc >= 0x20 && cc <= 0x3F)
+         psxport_on_gpu_poly(cc, CB, GPU.OffsX, GPU.OffsY);
+#endif
       if (command->func[GPU.abr][GPU.TexMode])
          command->func[GPU.abr][GPU.TexMode | (GPU.MaskEvalAND ? 0x4 : 0x0)](&GPU, CB);
    }
@@ -1500,6 +1510,9 @@ void GPU_Write(const int32_t timestamp, uint32_t A, uint32_t V)
             GPU.DisplayFB_YStart = (V >> 10) & 0x1FF;
             GPU.display_change_count++;
             rhi_intf_set_vram_framebuffer_coords(GPU.DisplayFB_XStart, GPU.DisplayFB_YStart);
+#ifdef PSXPORT_HOOKS
+            psxport_on_gpu_flip(V); /* display flip = renderer frame boundary */
+#endif
             break;
 
          case 0x06:  /* Horizontal display range */
