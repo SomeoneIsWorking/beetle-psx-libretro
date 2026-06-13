@@ -24,6 +24,10 @@
 #include "irq.h"
 #include "psx_events.h"
 #include "timer.h"
+#ifdef PSXPORT_HOOKS
+#include <stdio.h>
+#include "psxport_hooks.h"
+#endif
 
 /*
  Notes(some of it may be incomplete or wrong in subtle ways)
@@ -326,6 +330,19 @@ void TIMER_ClockHRetrace(void)
 {
    if(Timers[1].Mode & 0x100)
       ClockTimer(1, 1);
+#ifdef PSXPORT_HOOKS
+   if (psxport_cdc_log) {
+      static unsigned s_frame = 0xFFFFFFFFu, s_hr = 0, s_c0 = 0;
+      if (psxport_frame != s_frame) {
+         if (s_frame != 0xFFFFFFFFu)
+            fprintf(stderr, "[hretrace f%u] calls=%u T1.Counter %u->%u (delta=%d)\n",
+                    s_frame, s_hr, s_c0, (unsigned)Timers[1].Counter,
+                    (int)Timers[1].Counter - (int)s_c0);
+         s_frame = psxport_frame; s_hr = 0; s_c0 = Timers[1].Counter;
+      }
+      s_hr++;
+   }
+#endif
 }
 
 int32_t MDFN_FASTCALL TIMER_Update(const int32_t timestamp)
@@ -394,6 +411,13 @@ void MDFN_FASTCALL TIMER_Write(const int32_t timestamp, uint32_t A, uint16_t V)
       case 0x4: Timers[which].Mode = (V & 0x3FF) | (Timers[which].Mode & 0x1C00);
                 Timers[which].IRQDone = false;
                 Timers[which].Counter = 0;
+#ifdef PSXPORT_HOOKS
+                if (psxport_cdc_log)
+                   fprintf(stderr, "[timer%d-mode f%u] Mode<-%04X (clk100=%d hblank=%s)\n",
+                           which, psxport_frame, (unsigned)Timers[which].Mode,
+                           (int)!!(Timers[which].Mode & 0x100),
+                           (Timers[which].Mode & 0x100) ? "GPU/hblank" : "sysclock");
+#endif
 
                 CalcCountingStart(which); /* Call after setting .Mode */
                 break;
