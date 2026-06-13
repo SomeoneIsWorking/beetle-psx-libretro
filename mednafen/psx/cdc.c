@@ -2512,6 +2512,17 @@ int32_t PS_CDC_Command_Pause(PS_CDC *cdc, const int arg_count, const uint8_t *ar
     * (see the tail of HandlePlayRead); arm the next sector read. */
    cdc->PSRCounter = 33868800 / (75 * ((cdc->Mode & MODE_SPEED) ? 2 : 1));
 
+#ifdef PSXPORT_HOOKS
+   /* psxport instant-CD (bit 32): the ACK->COMPLETE delay below (~1.1M cyc ~2
+      frames) models drive spin-down/hover and is "an approximation" tuned to
+      avoid loading hangs in a few HW-quirk games. On PC there is no drive: a
+      Pause completes as soon as the consumer's IRQ handler can read the ACK.
+      Tomba2's intro/asset loader does Setloc->SeekL->ReadN->Pause PER SECTOR, so
+      this delay was the dominant per-sector cost (hundreds of sectors). We keep
+      a small ACK->COMPLETE headroom (50000 cyc ~1.5ms). */
+   if (psxport_cd_instant & 32)
+      return 50000;
+#endif
    /* An approximation; the pseudorandom component addresses
     * loading-related hangs in "Colony Wars - Vengeance (Europe)" and
     * "Army Men - Air Attack (Europe)". */
@@ -3026,6 +3037,20 @@ int32_t PS_CDC_Command_ReadTOC(PS_CDC *cdc, const int arg_count, const uint8_t *
 
    /* ...and not to mention the time taken varies from disc to disc even! */
    ret_time = 30000000 + PS_CDC_CalcSeekTime(cdc, cdc->CurSector, 0, cdc->DriveStatus != DS_STOPPED, cdc->DriveStatus == DS_PAUSED);
+
+#ifdef PSXPORT_HOOKS
+   /* psxport instant-CD (bit 16): the 30,000,000-cycle constant above is, by the
+      original comment, "a gross approximation" of the physical TOC-scan time
+      (~0.9s @ 33.8688MHz). On PC the disc TOC is already resident in RAM
+      (CDIF_ReadTOC is a memcpy) so the scan is instant. We keep only a small
+      ACK->COMPLETE headroom (50000 cyc ~1.5ms) so the consumer's IRQ handler can
+      read the Part-1 ACKNOWLEDGE result before Part-2's COMPLETE fires -- same
+      headroom rationale as the ReadN pacing above. The seek component is dropped
+      with the constant: on PC there is no head to move. Tomba2 issues ReadTOC at
+      intro state 5 (the ~53-frame SCEA->Whoopee gap); this collapses it. */
+   if (psxport_cd_instant & 16)
+      ret_time = 50000;
+#endif
 
    cdc->SeekTarget = 0;
    cdc->HoldLogicalPos = false;
