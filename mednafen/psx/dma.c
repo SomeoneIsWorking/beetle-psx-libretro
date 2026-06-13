@@ -33,6 +33,23 @@
 #include "mdec.h"
 #include "gpu.h"
 #include "dma.h"
+#ifdef PSXPORT_HOOKS
+#include <stdio.h>
+#include "psxport_hooks.h"
+/* RE probe: per-frame ch3 (CDROM) DMA activity — arms (CHCR bit24 rising edge)
+ * and words actually transferred. Pairs with cdc.c's BFRD (cd-reqdata) probe to
+ * locate where the FMV per-sector chain (INT1 -> BFRD -> DMA3) collapses under HLE. */
+static unsigned ppx_dma3_frame = 0xFFFFFFFFu, ppx_dma3_arms = 0, ppx_dma3_words = 0;
+static void ppx_dma3_flush(void) {
+   if (!psxport_cdc_log) return;
+   if (psxport_frame != ppx_dma3_frame) {
+      if (ppx_dma3_frame != 0xFFFFFFFFu && (ppx_dma3_arms || ppx_dma3_words))
+         fprintf(stderr, "[dma3 f%u] arms=%u words=%u (sectors~%.1f)\n",
+                 ppx_dma3_frame, ppx_dma3_arms, ppx_dma3_words, ppx_dma3_words / 512.0);
+      ppx_dma3_frame = psxport_frame; ppx_dma3_arms = 0; ppx_dma3_words = 0;
+   }
+}
+#endif
 
 /* Notes:
 
@@ -475,6 +492,9 @@ static INLINE void RunChannel(int32_t timestamp, int32_t clocks, int ch)
 
          DMACH[ch].WordCounter--;
          DMACH[ch].ClockCounter--;
+#ifdef PSXPORT_HOOKS
+         if (psxport_cdc_log && ch == CH_CDC) { ppx_dma3_flush(); ppx_dma3_words++; }
+#endif
 
 SkipPayloadStuff: ;
 
@@ -650,6 +670,9 @@ void DMA_Write(const int32_t timestamp, uint32_t A, uint32_t V)
 
             if(!(OldCC & (1 << 24)) && (V & (1 << 24)))
             {
+#ifdef PSXPORT_HOOKS
+               if (psxport_cdc_log && ch == CH_CDC) { ppx_dma3_flush(); ppx_dma3_arms++; }
+#endif
                DMACH[ch].WordCounter = 0;
                DMACH[ch].ClockCounter = 0;
 

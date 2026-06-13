@@ -1998,6 +1998,16 @@ void PS_CDC_Write(PS_CDC *cdc, const int32_t timestamp, uint32_t A, uint8_t V)
          case 0x02:
             if(V & 0x80)
             {
+#ifdef PSXPORT_HOOKS
+               if (psxport_cdc_log) {
+                  static unsigned s_req = 0, s_lf = 0xFFFFFFFF;
+                  s_req++;
+                  if (psxport_frame != s_lf) { s_lf = psxport_frame;
+                     fprintf(stderr, "[cd-reqdata f%u] req#%u SB_In=%u DMABuf.in=%u\n",
+                             psxport_frame, s_req, (unsigned)cdc->SB_In, (unsigned)cdc->DMABuffer.in_count);
+                  }
+               }
+#endif
                if(!cdc->DMABuffer.in_count)
                {
                   if(!cdc->SB_In)
