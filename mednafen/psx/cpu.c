@@ -314,6 +314,10 @@ uint32_t* psxport_cpu_gpr(void)
 {
    return s_cpu.GPR_full;
 }
+/* CPU scratchpad (0x1F800000-0x1F8003FF) byte access for RE: games keep hot
+   state machines here, which main-RAM dumps/pokes never see. */
+uint8_t psxport_scratch8(uint32_t off) { return ScratchRAM->data8[off & 0x3FF]; }
+void psxport_scratch_poke8(uint32_t off, uint8_t v) { ScratchRAM->data8[off & 0x3FF] = v; }
 
 /* Generic CPU primitive: set the program counter (and clear the branch-delay
    state) so execution resumes cleanly at `pc`. Sibling to psxport_cpu_gpr();
@@ -973,6 +977,8 @@ static int32_t CPU_RunReal(PS_CPU *self, int32_t timestamp_in)
     const uint32_t cov_word = (PC & 0x1FFFFF) >> 2;
     psxport_cov_bitmap[cov_word >> 3] |= 1 << (cov_word & 7);
    }
+   if(MDFN_UNLIKELY(psxport_pctrace_hi != 0))
+    psxport_pctrace_push(PC);
    if(MDFN_UNLIKELY(psxport_hook_count != 0))
    {
     uint32_t psxport_target;
