@@ -640,6 +640,10 @@ static INLINE void WriteMemory_u8(int32_t *timestamp, uint32_t address, uint32_t
    if (MDFN_LIKELY(!(CP0.SR & 0x10000)))
    {
       address &= addr_mask[address >> 29];
+#ifdef PSXPORT_HOOKS
+      if (MDFN_UNLIKELY(psxport_watch_addr != PSXPORT_WATCH_OFF) && (address & 0x1FFFFC) == psxport_watch_addr)
+         psxport_on_write(address, value, psxport_last_pc, 1);
+#endif
 
       if (address >= 0x1F800000 && address <= 0x1F8003FF)
       {
@@ -661,6 +665,10 @@ static INLINE void WriteMemory_u16(int32_t *timestamp, uint32_t address, uint32_
    if (MDFN_LIKELY(!(CP0.SR & 0x10000)))
    {
       address &= addr_mask[address >> 29];
+#ifdef PSXPORT_HOOKS
+      if (MDFN_UNLIKELY(psxport_watch_addr != PSXPORT_WATCH_OFF) && (address & 0x1FFFFC) == psxport_watch_addr)
+         psxport_on_write(address, value, psxport_last_pc, 2);
+#endif
 
       if (address >= 0x1F800000 && address <= 0x1F8003FF)
       {
@@ -682,6 +690,10 @@ static INLINE void WriteMemory_u32(int32_t *timestamp, uint32_t address, uint32_
    if (MDFN_LIKELY(!(CP0.SR & 0x10000)))
    {
       address &= addr_mask[address >> 29];
+#ifdef PSXPORT_HOOKS
+      if (MDFN_UNLIKELY(psxport_watch_addr != PSXPORT_WATCH_OFF) && (address & 0x1FFFFC) == psxport_watch_addr)
+         psxport_on_write(address, value, psxport_last_pc, 4);
+#endif
 
       if (address >= 0x1F800000 && address <= 0x1F8003FF)
       {
