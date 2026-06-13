@@ -5384,7 +5384,11 @@ static bool retro_set_system_av_info(void)
    return environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &new_av_info);
 }
 
-void retro_run(void)
+/* psxport: the per-frame emulation+emit, factored out of retro_run so the
+ * psxport runtime can drive Beetle a frame at a time and own the loop/pacing
+ * (and later insert interpolated in-between frames for wide60). retro_run() is
+ * now a thin wrapper; this is the generic "advance one PSX field" primitive. */
+void psxport_emulate_frame(void)
 {
    bool updated = false;
    static int32_t rects[MEDNAFEN_CORE_GEOMETRY_MAX_H];
@@ -5840,6 +5844,13 @@ void retro_run(void)
    /* LED interface */
    if (led_state_cb)
       retro_led_interface();
+}
+
+/* libretro entry point: one frame, paced by the frontend. The psxport runtime
+ * calls psxport_emulate_frame() directly instead (it owns the loop + pacing). */
+void retro_run(void)
+{
+   psxport_emulate_frame();
 }
 
 void retro_get_system_info(struct retro_system_info *info)
