@@ -1310,6 +1310,20 @@ int psxport_cd_read_sectors(int32_t lba, int count, uint8_t *dst)
    }
    return count;
 }
+
+/* Generic disc primitive: is the drive actively doing work (seeking/reading/
+   playing) vs idle (paused/standby/stopped)? The psxport runtime uses this to
+   tell a real load from an idle spin-dwell that merely shows a "Loading..."
+   label. */
+int psxport_cd_drive_busy(void)
+{
+   extern PS_CDC *PSX_CDC;
+   if (!PSX_CDC)
+      return 0;
+   const int ds = PSX_CDC->DriveStatus;
+   return (ds == DS_SEEKING || ds == DS_SEEKING_LOGICAL || ds == DS_SEEKING_LOGICAL2 ||
+           ds == DS_PLAYING || ds == DS_READING) ? 1 : 0;
+}
 #endif
 
 void PS_CDC_HandlePlayRead(PS_CDC *cdc)
