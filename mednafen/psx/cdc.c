@@ -1988,6 +1988,10 @@ void PS_CDC_Write(PS_CDC *cdc, const int32_t timestamp, uint32_t A, uint8_t V)
             cdc->PendingCommand = V;
             cdc->PendingCommandPhase = -1;
             cdc->ArgsReceiveIn = 0;
+#ifdef PSXPORT_HOOKS
+            if (psxport_cdc_log)
+               fprintf(stderr, "[cmd-write f%u] cmd %02X issued by pc=%08X\n", psxport_frame, V, psxport_last_pc);
+#endif
             break;
 
          case 0x01:
