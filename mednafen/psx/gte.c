@@ -1218,6 +1218,20 @@ static int32_t MVMVA(uint32_t instr)
 
    MultiplyMatrixByVector(mx, v, cv, sf, lm);
 
+#ifdef PSXPORT_HOOKS
+   if (psxport_mvmva_capture)
+   {
+      int32_t vx = 0, vy = 0, vz = 0;
+      if (v < 3) /* v0/v1/v2 from DR; v==3 is the IR vector (chained) */
+      {
+         vx = (int16_t)(DR[2 * v] & 0xFFFF);
+         vy = (int16_t)(DR[2 * v] >> 16);
+         vz = (int16_t)(DR[2 * v + 1] & 0xFFFF);
+      }
+      psxport_on_mvmva(vx, vy, vz, MAC(1), MAC(2), MAC(3));
+   }
+#endif
+
    return(8);
 }
 
@@ -1806,6 +1820,11 @@ int32_t GTE_Instruction(uint32_t instr)
    int32_t ret = 1;
 
    FLAGS = 0;
+
+#ifdef PSXPORT_HOOKS
+   if (psxport_gte_capture)
+      psxport_gte_op[code]++;
+#endif
 
    switch(code)
    {
