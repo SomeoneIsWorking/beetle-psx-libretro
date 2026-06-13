@@ -1934,8 +1934,8 @@ int32_t PS_CDC_Update(PS_CDC *cdc, const int32_t timestamp)
                         const CDC_CTEntry *command = &Commands[cdc->PendingCommand];
 #ifdef PSXPORT_HOOKS
                         if (psxport_cdc_log)
-                           fprintf(stderr, "[cdc f%u] cmd %02X (%s) args=%d\n", psxport_frame, cdc->PendingCommand,
-                                   command->name ? command->name : "?", cdc->ArgsReceiveIn);
+                           fprintf(stderr, "[cdc f%u] cmd %02X (%s) args=%d lastpc=%08X\n", psxport_frame, cdc->PendingCommand,
+                                   command->name ? command->name : "?", cdc->ArgsReceiveIn, psxport_last_pc);
 #endif
                         next_time = command->func(cdc, cdc->ArgsReceiveIn, cdc->ArgsReceiveBuf);
                         cdc->PendingCommandPhase = 2;
