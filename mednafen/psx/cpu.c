@@ -325,6 +325,27 @@ void psxport_cpu_set_pc(uint32_t pc)
    BACKED_new_PC = pc + 4;
    BDBT          = 0;
 }
+
+/* Generic COP0 register access (sibling to psxport_cpu_gpr/set_pc): read and
+   write the CP0 register file by index (CP0REG_SR=12, CAUSE=13, EPC=14,
+   TAR=6, ...). No BIOS/exception policy lives here; the frontend uses these to
+   read CAUSE/EPC and pop SR when it natively emulates the BIOS exception
+   handler. A write recomputes the cached interrupt-pending state so the
+   interpreter sees the updated SR/CAUSE immediately. */
+uint32_t psxport_cpu_cop0(int reg)
+{
+   if (reg < 0 || reg >= 32)
+      return 0;
+   return cpu_CP0.Regs[reg];
+}
+
+void psxport_cpu_set_cop0(int reg, uint32_t v)
+{
+   if (reg < 0 || reg >= 32)
+      return;
+   cpu_CP0.Regs[reg] = v;
+   CPU_RecalcIPCache();
+}
 #endif
 
 void CPU_Power(PS_CPU *self)

@@ -87,6 +87,21 @@ void IRQ_Write(uint32_t A, uint32_t V)
 }
 
 
+#ifdef PSXPORT_HOOKS
+/* Generic IRQ-controller accessors for the psxport runtime's native BIOS
+   exception handler. No BIOS policy here: just expose I_STAT (Status), I_MASK
+   (Mask), and a clear-bits operation equivalent to the game writing I_STAT to
+   acknowledge serviced IRQs. psxport_irq_ack recomputes the CPU IRQ line so a
+   fully-acked I_STAT drops the pending interrupt. */
+uint16_t psxport_irq_status(void) { return Status; }
+uint16_t psxport_irq_mask(void)   { return Mask; }
+void psxport_irq_ack(uint16_t bits)
+{
+   Status &= ~bits;
+   CPU_AssertIRQ(0, (bool)(Status & Mask));
+}
+#endif
+
 uint32_t IRQ_Read(uint32_t A)
 {
    uint32_t ret = Status;
