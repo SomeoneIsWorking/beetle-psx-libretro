@@ -729,7 +729,18 @@ void PS_CDC_ResetTS(PS_CDC *cdc)
 
 void PS_CDC_RecalcIRQ(PS_CDC *cdc)
 {
-   IRQ_Assert(IRQ_CD, (bool)(cdc->IRQBuffer & (cdc->IRQOutTestMask & 0x1F)));
+   bool assert_cd = (bool)(cdc->IRQBuffer & (cdc->IRQOutTestMask & 0x1F));
+#ifdef PSXPORT_HOOKS
+   if (psxport_cdc_log) {
+      static unsigned s_lib=0, s_lm=0;
+      if (cdc->IRQBuffer != s_lib || cdc->IRQOutTestMask != s_lm) {
+         s_lib = cdc->IRQBuffer; s_lm = cdc->IRQOutTestMask;
+         fprintf(stderr, "[cdc-irq f%u] IRQBuffer=%02X IER(IRQOutTestMask)=%02X -> assert_CD=%d\n",
+                 psxport_frame, cdc->IRQBuffer, cdc->IRQOutTestMask, (int)assert_cd);
+      }
+   }
+#endif
+   IRQ_Assert(IRQ_CD, assert_cd);
 }
 
 void PS_CDC_WriteIRQ(PS_CDC *cdc, uint8_t V)
@@ -1315,6 +1326,19 @@ int psxport_cd_read_sectors(int32_t lba, int count, uint8_t *dst)
    playing) vs idle (paused/standby/stopped)? The psxport runtime uses this to
    tell a real load from an idle spin-dwell that merely shows a "Loading..."
    label. */
+/* Generic: set the CD-ROM interrupt-enable mask (IRQOutTestMask, the PSX CD
+ * register 1F801802.idx1 the BIOS CdInit normally sets). Without it the CDC
+ * never asserts IRQ_CD even when a command completes, so a HLE BIOS that skips
+ * the ROM CdInit must enable it here. v=0x1F enables all five CD INT types. */
+void psxport_cd_set_irq_enable(int v)
+{
+   extern PS_CDC *PSX_CDC;
+   if (!PSX_CDC)
+      return;
+   PSX_CDC->IRQOutTestMask = (uint8_t)(v & 0x1F);
+   PS_CDC_RecalcIRQ(PSX_CDC);
+}
+
 int psxport_cd_drive_busy(void)
 {
    extern PS_CDC *PSX_CDC;
