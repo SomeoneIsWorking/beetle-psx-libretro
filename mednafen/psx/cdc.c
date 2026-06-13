@@ -1278,6 +1278,40 @@ void PS_CDC_EnbufferizeCDDASector(PS_CDC *cdc, const uint8_t *buf)
    ab->ReadPos = 0;
 }
 
+#ifdef PSXPORT_HOOKS
+/* psxport BIOS HLE support: read `count` 2048-byte Mode2/Form1 user-data
+   sectors starting at filesystem LBA `lba` directly from the mounted CD image
+   into `dst` (count*2048 bytes), at host speed. This is the native equivalent
+   of what OpenBIOS's cdromBlockReading() drives the CDC to do one sector at a
+   time (Setloc->SeekL->ReadN->wait, gated by per-sector disc pacing + blocking
+   TestEvent spins).
+
+   LBA mapping: cdromBlockReading adds 150 to form an absolute MSF, but the CDC's
+   SeekL converts that MSF back through AMSF_to_LBA -> ABA_to_LBA (which subtracts
+   150), so the sector index handed to CDIF_ReadRawSector is the original
+   filesystem LBA. CDIF is LBA-indexed (LBA 0 = first program sector), so we read
+   `lba + i` directly -- NO +150 here (that would overshoot by 150 sectors). User
+   data is the 2048 bytes at offset 24 of the 2352-byte raw sector (12 sync + 4
+   header + 8 Mode2 subheader), identical to the emulator's own data-read path.
+   Returns count on success, -1 on any read failure (HLE caller then falls back
+   to the real BIOS path). */
+int psxport_hle_cd_read2048(int32_t lba, int count, uint8_t *dst)
+{
+   extern PS_CDC *PSX_CDC;
+   uint8_t raw[2352 + 96];
+   int i;
+   if (!PSX_CDC || !PSX_CDC->Cur_CDIF || count <= 0)
+      return -1;
+   for (i = 0; i < count; i++)
+   {
+      if (!CDIF_ReadRawSector(PSX_CDC->Cur_CDIF, raw, (uint32_t)(lba + i), -1))
+         return -1;
+      memcpy(dst + i * 2048, raw + 24, 2048);
+   }
+   return count;
+}
+#endif
+
 void PS_CDC_HandlePlayRead(PS_CDC *cdc)
 {
    /* Target slot for the new sector: SectorPipe_Pos is the write
@@ -1598,8 +1632,13 @@ void PS_CDC_HandlePlayRead(PS_CDC *cdc)
       ~7000 cycles/sector (~64x) leaves the consumer's IRQ handler + DMA
       enough headroom to acknowledge between sectors; pulling the clock on
       ack (tried) desynchronizes the sector pipe and wedges the BIOS.
-      Audio-paced streaming modes keep native timing. */
-   if ((psxport_cd_instant & 8) && psxport_read_is_readn && !(cdc->Mode & (MODE_CDDA | MODE_STRSND)) &&
+      Only XA streaming (MODE_STRSND) is excluded so FMV audio keeps its
+      real-time cadence. The stray MODE_CDDA (0x01) bit is NOT excluded:
+      Tomba2's loader issues data ReadN (cmd 06, DS_READING -> sets
+      psxport_read_is_readn) with Mode=0x01, but real CD-DA *audio* plays via
+      the Play command (DS_PLAYING) which never sets psxport_read_is_readn --
+      so accelerating here speeds the load without ever touching audio. */
+   if ((psxport_cd_instant & 8) && psxport_read_is_readn && !(cdc->Mode & MODE_STRSND) &&
        !(cdc->IRQBuffer & 0xF))
       cdc->PSRCounter += 7000; /* consumer keeps up: deliver fast */
    else
@@ -2384,6 +2423,19 @@ void PS_CDC_ReadBase(PS_CDC *cdc)
        * (a few sectors before the target). */
 
       cdc->PSRCounter = 33868800 / (75 * ((cdc->Mode & MODE_SPEED) ? 2 : 1)) + PS_CDC_CalcSeekTime(cdc, cdc->CurSector, cdc->SeekTarget, cdc->DriveStatus != DS_STOPPED, cdc->DriveStatus == DS_PAUSED);
+#ifdef PSXPORT_HOOKS
+      /* psxport instant-CD (bit 1, seek): the first term above is the drive's
+         rotational/read-settle latency to the first sector after a seek
+         (~451584 cyc @1x ~ 0.8 frame). Tomba2's pre-FMV loader runs a tight
+         Setloc->SeekL->ReadN->Pause loop ~120x (1 sector/iter), so this per-seek
+         settle -- not the data transfer -- dominates the load (game code is 0%
+         of the dwell; the CPU just spins in BIOS TestEvent waiting for it).
+         There is no platter on PC, so collapse the settle to a small fixed
+         arming delay, keeping only CalcSeekTime (already near-zero under bit1/2).
+         XA streaming (MODE_STRSND) keeps native timing for FMV audio sync. */
+      if ((psxport_cd_instant & 1) && !(cdc->Mode & MODE_STRSND))
+         cdc->PSRCounter = 2000 + PS_CDC_CalcSeekTime(cdc, cdc->CurSector, cdc->SeekTarget, cdc->DriveStatus != DS_STOPPED, cdc->DriveStatus == DS_PAUSED);
+#endif
       cdc->HeaderBufValid = false;
       PS_CDC_PreSeekHack(cdc, cdc->SeekTarget);
 
