@@ -1295,7 +1295,7 @@ void PS_CDC_EnbufferizeCDDASector(PS_CDC *cdc, const uint8_t *buf)
    header + 8 Mode2 subheader), identical to the emulator's own data-read path.
    Returns count on success, -1 on any read failure (HLE caller then falls back
    to the real BIOS path). */
-int psxport_hle_cd_read2048(int32_t lba, int count, uint8_t *dst)
+int psxport_cd_read_sectors(int32_t lba, int count, uint8_t *dst)
 {
    extern PS_CDC *PSX_CDC;
    uint8_t raw[2352 + 96];

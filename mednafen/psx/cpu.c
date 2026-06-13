@@ -315,22 +315,15 @@ uint32_t* psxport_cpu_gpr(void)
    return s_cpu.GPR_full;
 }
 
-/* psxport HLE BIOS boot: jump the CPU straight into the game's EXE instead of
-   the BIOS ROM at 0xBFC00000. Called by the frontend AFTER the EXE text has
-   been copied into RAM and the kernel tables laid down, but BEFORE the first
-   instruction executes. Sets PC + the EXE-provided SP/GP and clears the branch-
-   delay state so execution begins cleanly at the entry point. a0/a1 mirror what
-   the retail BIOS leaves (argc=1, argv=NULL) for EXEs that read them. */
-void psxport_hle_set_boot(uint32_t pc, uint32_t sp, uint32_t gp)
+/* Generic CPU primitive: set the program counter (and clear the branch-delay
+   state) so execution resumes cleanly at `pc`. Sibling to psxport_cpu_gpr();
+   the frontend uses these two to redirect the CPU (e.g. the psxport HLE BIOS
+   jumps into a freshly-loaded EXE). No BIOS/boot policy lives here. */
+void psxport_cpu_set_pc(uint32_t pc)
 {
    BACKED_PC     = pc;
    BACKED_new_PC = pc + 4;
    BDBT          = 0;
-   GPR[28]       = gp;            /* $gp */
-   if (sp) { GPR[29] = sp; GPR[30] = sp; } /* $sp, $fp */
-   GPR[31]       = 0;             /* $ra (EXE entry shouldn't return) */
-   GPR[4]        = 1;             /* $a0 = argc */
-   GPR[5]        = 0;             /* $a1 = argv */
 }
 #endif
 
