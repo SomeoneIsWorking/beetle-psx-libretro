@@ -671,7 +671,13 @@ void DMA_Write(const int32_t timestamp, uint32_t A, uint32_t V)
             if(!(OldCC & (1 << 24)) && (V & (1 << 24)))
             {
 #ifdef PSXPORT_HOOKS
-               if (psxport_cdc_log && ch == CH_CDC) { ppx_dma3_flush(); ppx_dma3_arms++; }
+               if (psxport_cdc_log && ch == CH_CDC) {
+                  ppx_dma3_flush(); ppx_dma3_arms++;
+                  static unsigned s_lastpc_frame = 0xFFFFFFFFu;
+                  if (psxport_frame != s_lastpc_frame) { s_lastpc_frame = psxport_frame;
+                     fprintf(stderr, "[dma3-arm f%u] CHCR<-%08X by pc=%08X\n", psxport_frame, V, psxport_last_pc);
+                  }
+               }
 #endif
                DMACH[ch].WordCounter = 0;
                DMACH[ch].ClockCounter = 0;
