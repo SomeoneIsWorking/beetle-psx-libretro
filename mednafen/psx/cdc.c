@@ -1348,6 +1348,19 @@ int psxport_cd_drive_busy(void)
    return (ds == DS_SEEKING || ds == DS_SEEKING_LOGICAL || ds == DS_SEEKING_LOGICAL2 ||
            ds == DS_PLAYING || ds == DS_READING) ? 1 : 0;
 }
+
+/* Generic disc primitive: 1 if CD-XA ADPCM streaming (STRSND) is enabled in the
+   current Setmode. A StrPlayer that is consuming a *silent* MDEC clip (e.g. the
+   inter-FMV studio-logo still) runs with STRSND off; a real FMV with audio runs
+   with it on. Lets the runtime distinguish "skippable silent hold" from "real
+   cutscene playback" without per-game RAM probing. */
+int psxport_cd_strsnd_on(void)
+{
+   extern PS_CDC *PSX_CDC;
+   if (!PSX_CDC)
+      return 0;
+   return (PSX_CDC->Mode & MODE_STRSND) ? 1 : 0;
+}
 #endif
 
 void PS_CDC_HandlePlayRead(PS_CDC *cdc)
@@ -2239,6 +2252,11 @@ int32_t PS_CDC_Command_Setloc(PS_CDC *cdc, const int arg_count, const uint8_t *a
 
    cdc->CommandLoc = f + 75 * s + 75 * 60 * m - 150;
    cdc->CommandLoc_Dirty = true;
+
+#ifdef PSXPORT_HOOKS
+   if (psxport_cdc_log)
+      fprintf(stderr, "[setloc f%u] lba=%d pc=%08X\n", psxport_frame, cdc->CommandLoc, psxport_last_pc);
+#endif
 
    PS_CDC_WriteResult(cdc, PS_CDC_MakeStatus(cdc, false));
    PS_CDC_WriteIRQ(cdc, CDCIRQ_ACKNOWLEDGE);
