@@ -979,6 +979,8 @@ static int32_t CPU_RunReal(PS_CPU *self, int32_t timestamp_in)
    }
    if(MDFN_UNLIKELY(psxport_pctrace_hi != 0))
     psxport_pctrace_push(PC);
+   if(MDFN_UNLIKELY(psxport_calltrace_on != 0))
+    psxport_calltrace(PC, instr, s_cpu.GPR_full);
    if(MDFN_UNLIKELY(psxport_hook_count != 0))
    {
     uint32_t psxport_target;
