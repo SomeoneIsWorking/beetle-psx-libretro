@@ -1590,6 +1590,18 @@ void GPU_WriteDMA(uint32_t V, uint32_t addr)
    GPU_WriteCB(V, addr);
 }
 
+/* psxport GP0 differ (tools/gpu_differ): prepare the GPU to replay a captured GP0 word stream
+ * OUTSIDE the normal emulation timing. Flush the command FIFO, clear any in-progress command,
+ * and grant a large draw-time budget so every replayed primitive rasterizes immediately
+ * (ProcessFIFO/INCMD_QUAD gate on DrawTimeAvail >= 0, which the normal GPU_Update cycle
+ * replenishes — absent here). Words are then fed via GPU_WriteDMA(word, 0). */
+void GPU_ReplayBegin(void)
+{
+   FastFIFO_Flush(&GPU_BlitterFIFO);
+   GPU.InCmd        = INCMD_NONE;
+   GPU.DrawTimeAvail = 0x40000000;
+}
+
 static INLINE uint32_t GPU_ReadData(void)
 {
    unsigned i;
