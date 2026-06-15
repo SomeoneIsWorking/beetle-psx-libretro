@@ -721,7 +721,19 @@ static INLINE void DrawSpan_##SUFFIX(PS_GPU *gpu, int y, const int32_t x_start, 
                   dither_y = 2; \
                } \
                dither_offset = gpu->DitherLUT[dither_y][dither_x]; \
-               fbw = ModTexel(dither_offset, fbw, r, g, b); \
+               { uint16_t pt_raw = fbw; \
+                 fbw = ModTexel(dither_offset, fbw, r, g, b); \
+                 /* psxport tools/gpu_differ: per-pixel math trace, matches gpu_native.c's \
+                    [pixtrace ours]. PSXPORT_PIXTRACE="VX,VY" dumps raw texel + interpolated \
+                    vertex color (r,g,b) + modulated output for the prim writing that pixel. */ \
+                 { static int pt_tx = -2, pt_ty; \
+                   if (pt_tx == -2) { const char* pe = getenv("PSXPORT_PIXTRACE"); \
+                     if (pe) sscanf(pe, "%d,%d", &pt_tx, &pt_ty); else pt_tx = -1; } \
+                   if (pt_tx >= 0 && (int)(x) == pt_tx && (int)(y) == pt_ty) \
+                     fprintf(stderr, "[pixtrace beetle] (%d,%d) texel=%04X vcol=(%d,%d,%d) mod=%04X " \
+                             "out5=(%d,%d,%d)\n", (int)(x), (int)(y), pt_raw, (int)(r), (int)(g), \
+                             (int)(b), fbw, fbw & 31, (fbw >> 5) & 31, (fbw >> 10) & 31); } \
+               } \
             } \
             PlotPixel_##BM_TAG##_ME##ME_LIT##_T1(gpu, x, y, fbw); \
          } \
