@@ -79,7 +79,19 @@
 #include "irq.h"
 #include "cdc.h"
 #include "spu.h"
+
+/* Oracle-only SPU trace (PSXPORT_SPU_DBG). This same spu.c links into BOTH the full-Beetle
+ * oracle (wide60rt, -D__LIBRETRO__) and the psxport runtime (which compiles spu.c without the
+ * rest of the core and has its own SPU log in spu_beetle.c). Gate every diagnostic on
+ * __LIBRETRO__ so it exists ONLY in the oracle and never references oracle-only globals
+ * (PSX_CPU) from the port build. */
+#ifdef __LIBRETRO__
 #include "cpu.h"
+extern PS_CPU *PSX_CPU;
+#define ORACLE_SPU_DBG() getenv("PSXPORT_SPU_DBG")
+#else
+#define ORACLE_SPU_DBG() 0
+#endif
 
 uint32_t IntermediateBufferPos;
 int16_t IntermediateBuffer[4096][2];
@@ -1387,7 +1399,7 @@ static INLINE void SPU_RunNoise(void)
          for(i = 0; i < 2; i++)
             cdav[i] = (cda_raw[i] * CDVol[i]) >> 15;
 
-         if (getenv("PSXPORT_SPU_DBG")) {
+         if (ORACLE_SPU_DBG()) {
             static long n_cd_on, n_cd_nz, n_tot;
             n_tot++;
             if (SPUControl & 0x0001) n_cd_on++;
@@ -1630,15 +1642,15 @@ void SPU_Init(void)
                     /* Voice ON: */
          case 0x08: VoiceOn &= 0xFFFF0000;
                     VoiceOn |= V << 0;
-                    if (getenv("PSXPORT_SPU_DBG") && V) {
-                       extern PS_CPU *PSX_CPU;
+#ifdef __LIBRETRO__
+                    if (ORACLE_SPU_DBG() && V)
                        fprintf(stderr, "[oraclespu] KON lo=%04X pc=%08X\n", V, PSX_CPU ? PSX_CPU->BACKED_PC : 0);
-                    }
+#endif
                     break;
 
          case 0x0a: VoiceOn &= 0x0000FFFF;
                     VoiceOn |= (V & 0xFF) << 16;
-                    if (getenv("PSXPORT_SPU_DBG") && V) fprintf(stderr, "[oraclespu] KON hi=%04X\n", V);
+                    if (ORACLE_SPU_DBG() && V) fprintf(stderr, "[oraclespu] KON hi=%04X\n", V);
                     break;
 
                     /* Voice OFF: */
@@ -1702,7 +1714,7 @@ void SPU_Init(void)
                     break;
 
          case 0x2A:
-                    if (getenv("PSXPORT_SPU_DBG") && V != SPUControl)
+                    if (ORACLE_SPU_DBG() && V != SPUControl)
                        fprintf(stderr, "[oraclespu] SPUCNT=%04X enable=%d cdaudio=%d irq=%d xfer=%d\n",
                                V, (V>>15)&1, V&1, (V>>6)&1, (V>>4)&3);
                     SPUControl = V;
