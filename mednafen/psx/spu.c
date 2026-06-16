@@ -1399,6 +1399,20 @@ static INLINE void SPU_RunNoise(void)
          for(i = 0; i < 2; i++)
             cdav[i] = (cda_raw[i] * CDVol[i]) >> 15;
 
+         // psxport: trace the CDVOL actually applied to live XA samples (on change), to catch
+         // any skew between the game's per-frame CD-vol fade ramp and the XA stream's audibility.
+         // (env cached once — this is the per-sample SPU mix hot path.)
+         static int xamix_dbg = -1;
+         if (xamix_dbg < 0) xamix_dbg = getenv("PSXPORT_XAMIX_DBG") ? 1 : 0;
+         if (xamix_dbg && (cda_raw[0] || cda_raw[1])) {
+            static int32_t pv = 0x7fffffff;
+            if (CDVol[0] != pv) {
+               fprintf(stderr, "[xamix] CDVolL=%d (on=%d) raw0=%d\n",
+                       (int)(int16_t)CDVol[0], (int)(SPUControl & 1), (int)cda_raw[0]);
+               pv = CDVol[0];
+            }
+         }
+
          if (ORACLE_SPU_DBG()) {
             static long n_cd_on, n_cd_nz, n_tot;
             n_tot++;
