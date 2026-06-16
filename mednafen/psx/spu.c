@@ -1730,6 +1730,7 @@ void SPU_Init(void)
                     break;
 
          case 0x30: CDVol[0] = (int16_t)V;
+                    if (getenv("PSXPORT_CDVOL_DBG")) fprintf(stderr, "[cdvol] L=%d\n", (int)(int16_t)V);
                     break;
 
          case 0x32: CDVol[1] = (int16_t)V;
