@@ -712,6 +712,9 @@ void input_update(bool libretro_supports_bitmasks, retro_input_state_t input_sta
                      ? ( 1 << i ) : 0;
                }
             }
+            if (getenv("PSXPORT_INPUTDBG") && p_input->buttons)
+               fprintf(stderr, "[inputdbg] player%u type=%u buttons=%04X\n",
+                       iplayer, input_type[iplayer], p_input->buttons);
 
             break;
 
