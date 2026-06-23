@@ -467,6 +467,10 @@ static int32_t clock_divider;
 
 static uint16_t SPURAM[524288 / sizeof(uint16_t)];
 
+/* psxport dual-core diff harness: snapshot the 512 KB SPU sound RAM (where VAB instrument samples
+ * live) so the PSX-fallback core and native core can be compared. Read-only peek, no state change. */
+void SPU_PeekRAM(uint8_t *dst) { memcpy(dst, SPURAM, sizeof(SPURAM)); }
+
 /* Forward declarations for SPU_Sweep operations; defined further down. */
 static INLINE void SPU_Sweep_Power(SPU_Sweep *sweep);
 static INLINE void SPU_Sweep_WriteControl(SPU_Sweep *sweep, uint16_t value);
