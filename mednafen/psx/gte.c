@@ -78,10 +78,15 @@ typedef struct
    int16_t Y;
 } gtexy;
 
-static uint32_t *CR;
-static uint32_t *DR;
-
-static uint32_t REG[64];
+// Per-instance GTE register state (was file-scope REG[64]/FLAGS/CR/DR). gte_cur is the bound instance;
+// the macros below keep every existing REG/CR/DR/FLAGS reference in this file unchanged. Bound per core
+// via GTE_BindState (gte_beetle.cpp) so two Cores keep SEPARATE GTE state. See gte_state.h.
+#include "gte_state.h"
+static GteRegs gte_default_regs;
+static GteRegs *gte_cur = &gte_default_regs;
+#define REG   (gte_cur->REG)
+#define CR    (gte_cur->CR)
+#define DR    (gte_cur->DR)
 #define CR_OFFSET 32
 
 /* Three 3x3 signed 4.12 matrices: rotation (CR[0]), light (CR[8]), and color (CR[16]) */
@@ -229,6 +234,16 @@ void GTE_Init(void)
    DivTable[0x100] = DivTable[0xFF];
 }
 
+
+// Per-instance binding (psxport): point the GTE math at `s`'s register file so each Core keeps its own
+// GTE state. CR/DR always index into the bound REG (DR=REG, CR=REG+32). Idempotent — safe every bind.
+void GTE_BindState(GteRegs* s)
+{
+   gte_cur = s ? s : &gte_default_regs;
+   DR = REG;                 /* macros expand to gte_cur->DR / gte_cur->REG (now-bound instance) */
+   CR = REG + CR_OFFSET;
+}
+GteRegs* GTE_CurState(void) { return gte_cur; }
 
 void GTE_Power(void)
 {
