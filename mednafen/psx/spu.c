@@ -417,55 +417,70 @@ typedef union
    } s;
 } SPU_RegBlock;
 
-static SPU_Voice Voices[24];
-
-static uint32_t NoiseDivider;
-static uint32_t NoiseCounter;
-static uint16_t LFSR;
-
-static uint32_t FM_Mode;
-static uint32_t Noise_Mode;
-static uint32_t Reverb_Mode;
-
-static uint32_t ReverbWA;
-
-static SPU_Sweep GlobalSweep[2];	/* Doesn't affect reverb volume! */
-
-static int32_t ReverbVol[2];
-
-static int32_t CDVol[2];
-static int32_t ExternVol[2];
-
-static uint32_t IRQAddr;
-
-static uint32_t RWAddr;
-
-static uint16_t SPUControl;
-
 extern bool psx_spu_silent_voice_opt;
 
-static uint32_t VoiceOn;
-static uint32_t VoiceOff;
+/* Per-instance SPU state (psxport, 2026-06-24): all the mutable SPU machine state — voices, the 512 KB
+ * sound RAM, register file, reverb/noise/sweep state — was file-scope, shared by every Core. To run two
+ * cores with SEPARATE SPU state (no shared state between cores), it lives in this struct; spu_cur is the
+ * bound instance, the macros keep every reference below unchanged, and SPU_BindState (set per core
+ * frame-step, from the explicit Core) selects it. Heap-allocated per Game (SPU_NewState). */
+#include <stdlib.h>
+typedef struct SpuState {
+   SPU_Voice Voices[24];
+   uint32_t NoiseDivider, NoiseCounter;
+   uint16_t LFSR;
+   uint32_t FM_Mode, Noise_Mode, Reverb_Mode;
+   uint32_t ReverbWA;
+   SPU_Sweep GlobalSweep[2];
+   int32_t ReverbVol[2];
+   int32_t CDVol[2], ExternVol[2];
+   uint32_t IRQAddr, RWAddr;
+   uint16_t SPUControl;
+   uint32_t VoiceOn, VoiceOff, BlockEnd, CWA;
+   SPU_RegBlock regs;
+   uint16_t AuxRegs[0x10];
+   int16_t RDSB[2][128], RUSB[2][64];
+   int32_t RvbResPos;
+   uint32_t ReverbCur;
+   bool IRQAsserted;
+   int32_t clock_divider;
+   uint16_t SPURAM[524288 / sizeof(uint16_t)];
+} SpuState;
+static SpuState spu_default_state;
+static SpuState *spu_cur = &spu_default_state;
+#define Voices       (spu_cur->Voices)
+#define NoiseDivider (spu_cur->NoiseDivider)
+#define NoiseCounter (spu_cur->NoiseCounter)
+#define LFSR         (spu_cur->LFSR)
+#define FM_Mode      (spu_cur->FM_Mode)
+#define Noise_Mode   (spu_cur->Noise_Mode)
+#define Reverb_Mode  (spu_cur->Reverb_Mode)
+#define ReverbWA     (spu_cur->ReverbWA)
+#define GlobalSweep  (spu_cur->GlobalSweep)
+#define ReverbVol    (spu_cur->ReverbVol)
+#define CDVol        (spu_cur->CDVol)
+#define ExternVol    (spu_cur->ExternVol)
+#define IRQAddr      (spu_cur->IRQAddr)
+#define RWAddr       (spu_cur->RWAddr)
+#define SPUControl   (spu_cur->SPUControl)
+#define VoiceOn      (spu_cur->VoiceOn)
+#define VoiceOff     (spu_cur->VoiceOff)
+#define BlockEnd     (spu_cur->BlockEnd)
+#define CWA          (spu_cur->CWA)
+#define regs         (spu_cur->regs)
+#define AuxRegs      (spu_cur->AuxRegs)
+#define RDSB         (spu_cur->RDSB)
+#define RUSB         (spu_cur->RUSB)
+#define RvbResPos    (spu_cur->RvbResPos)
+#define ReverbCur    (spu_cur->ReverbCur)
+#define IRQAsserted  (spu_cur->IRQAsserted)
+#define clock_divider (spu_cur->clock_divider)
+#define SPURAM       (spu_cur->SPURAM)
 
-static uint32_t BlockEnd;
-
-static uint32_t CWA;
-
-static SPU_RegBlock regs;
-
-static uint16_t AuxRegs[0x10];
-
-static int16_t RDSB[2][128];	/* [40] */
-static int16_t RUSB[2][64];
-static int32_t RvbResPos;
-
-static uint32_t ReverbCur;
-
-static bool IRQAsserted;
-
-static int32_t clock_divider;
-
-static uint16_t SPURAM[524288 / sizeof(uint16_t)];
+/* Per-instance binding (psxport). spu_state.h declares these for the C++ side (game.h / native_boot). */
+void *SPU_NewState(void)   { return calloc(1, sizeof(SpuState)); }
+void  SPU_FreeState(void *p){ free(p); }
+void  SPU_BindState(void *p){ spu_cur = p ? (SpuState*)p : &spu_default_state; }
 
 /* psxport dual-core diff harness: snapshot the 512 KB SPU sound RAM (where VAB instrument samples
  * live) so the PSX-fallback core and native core can be compared. Read-only peek, no state change. */

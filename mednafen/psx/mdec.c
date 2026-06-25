@@ -86,45 +86,63 @@
  #include <altivec.h>
 #endif
 
-static int32_t ClockCounter;
-static unsigned MDRPhase;
-static FastFIFO InFIFO;
-static FastFIFO OutFIFO;
+/* Per-instance MDEC state (psxport, 2026-06-24): all the mutable MDEC machine state was file-scope,
+ * shared by every Core. To run two cores with SEPARATE MDEC state (no shared state between cores), it
+ * lives in this struct; mdec_cur is the bound instance, the macros keep every reference below unchanged,
+ * and MDEC_BindState (set per core frame-step, from the explicit Core) selects it. Heap-allocated per
+ * Game (MDEC_NewState); the SIMD-aligned arrays keep their 16-byte alignment as struct members. */
+#include <stdlib.h>
+typedef struct MdecState {
+   int32_t ClockCounter;
+   unsigned MDRPhase;
+   FastFIFO InFIFO, OutFIFO;
+   int8_t block_y[8][8], block_cb[8][8], block_cr[8][8];
+   uint32_t Control, Command;
+   bool InCommand;
+   uint8_t QMatrix[2][64];
+   uint32_t QMIndex;
+   MDFN_ALIGN(16) int16_t IDCTMatrix[64];
+   uint32_t IDCTMIndex;
+   uint8_t QScale;
+   MDFN_ALIGN(16) int16_t Coeff[64];
+   uint32_t CoeffIndex, DecodeWB;
+   union { uint32_t pix32[48]; uint16_t pix16[96]; uint8_t pix8[192]; } PixelBuffer;
+   uint32_t PixelBufferReadOffset, PixelBufferCount32;
+   uint16_t InCounter;
+   uint8_t RAMOffsetY, RAMOffsetCounter, RAMOffsetWWS;
+} MdecState;
+static MdecState mdec_default_state;
+static MdecState *mdec_cur = &mdec_default_state;
+#define ClockCounter           (mdec_cur->ClockCounter)
+#define MDRPhase               (mdec_cur->MDRPhase)
+#define InFIFO                 (mdec_cur->InFIFO)
+#define OutFIFO                (mdec_cur->OutFIFO)
+#define block_y                (mdec_cur->block_y)
+#define block_cb               (mdec_cur->block_cb)
+#define block_cr               (mdec_cur->block_cr)
+#define Control                (mdec_cur->Control)
+#define Command                (mdec_cur->Command)
+#define InCommand              (mdec_cur->InCommand)
+#define QMatrix                (mdec_cur->QMatrix)
+#define QMIndex                (mdec_cur->QMIndex)
+#define IDCTMatrix             (mdec_cur->IDCTMatrix)
+#define IDCTMIndex             (mdec_cur->IDCTMIndex)
+#define QScale                 (mdec_cur->QScale)
+#define Coeff                  (mdec_cur->Coeff)
+#define CoeffIndex             (mdec_cur->CoeffIndex)
+#define DecodeWB               (mdec_cur->DecodeWB)
+#define PixelBuffer            (mdec_cur->PixelBuffer)
+#define PixelBufferReadOffset  (mdec_cur->PixelBufferReadOffset)
+#define PixelBufferCount32     (mdec_cur->PixelBufferCount32)
+#define InCounter              (mdec_cur->InCounter)
+#define RAMOffsetY             (mdec_cur->RAMOffsetY)
+#define RAMOffsetCounter       (mdec_cur->RAMOffsetCounter)
+#define RAMOffsetWWS           (mdec_cur->RAMOffsetWWS)
 
-static int8_t block_y[8][8];
-static int8_t block_cb[8][8];	/* [y >> 1][x >> 1] */
-static int8_t block_cr[8][8];	/* [y >> 1][x >> 1] */
-
-static uint32_t Control;
-static uint32_t Command;
-static bool InCommand;
-
-static uint8_t QMatrix[2][64];
-static uint32_t QMIndex;
-
-MDFN_ALIGN(16) static int16_t IDCTMatrix[64];
-static uint32_t IDCTMIndex;
-
-static uint8_t QScale;
-
-MDFN_ALIGN(16) static int16_t Coeff[64];
-static uint32_t CoeffIndex;
-static uint32_t DecodeWB;
-
-static union
-{
- uint32_t pix32[48];
- uint16_t pix16[96];
- uint8_t   pix8[192];
-} PixelBuffer;
-static uint32_t PixelBufferReadOffset;
-static uint32_t PixelBufferCount32;
-
-static uint16_t InCounter;
-
-static uint8_t RAMOffsetY;
-static uint8_t RAMOffsetCounter;
-static uint8_t RAMOffsetWWS;
+/* Per-instance binding (psxport). mdec_state.h declares these for the C++ side (game.h / native_boot). */
+void *MDEC_NewState(void)    { return calloc(1, sizeof(MdecState)); }
+void  MDEC_FreeState(void *p){ free(p); }
+void  MDEC_BindState(void *p){ mdec_cur = p ? (MdecState*)p : &mdec_default_state; }
 
 static const uint8_t ZigZag[64] =
 {
