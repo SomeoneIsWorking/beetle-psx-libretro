@@ -485,6 +485,7 @@ void  SPU_BindState(void *p){ spu_cur = p ? (SpuState*)p : &spu_default_state; }
 /* psxport dual-core diff harness: snapshot the 512 KB SPU sound RAM (where VAB instrument samples
  * live) so the PSX-fallback core and native core can be compared. Read-only peek, no state change. */
 void SPU_PeekRAM(uint8_t *dst) { memcpy(dst, SPURAM, sizeof(SPURAM)); }
+void SPU_PokeRAM(const uint8_t *src) { memcpy(SPURAM, src, sizeof(SPURAM)); }
 
 /* Forward declarations for SPU_Sweep operations; defined further down. */
 static INLINE void SPU_Sweep_Power(SPU_Sweep *sweep);
