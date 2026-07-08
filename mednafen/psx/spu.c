@@ -486,6 +486,11 @@ void  SPU_BindState(void *p){ spu_cur = p ? (SpuState*)p : &spu_default_state; }
  * live) so the PSX-fallback core and native core can be compared. Read-only peek, no state change. */
 void SPU_PeekRAM(uint8_t *dst) { memcpy(dst, SPURAM, sizeof(SPURAM)); }
 
+/* psxport SV_CHECK fork-leg isolation: restore the BOUND instance's 512 KB SPU RAM from a prior
+ * SPU_PeekRAM snapshot, so the skip-leg's SPU writes can be rewound before replaying the oracle
+ * (substrate) arc from the same pre-state. Write-only counterpart to SPU_PeekRAM above. */
+void SPU_PokeRAM(const uint8_t *src) { memcpy(SPURAM, src, sizeof(SPURAM)); }
+
 /* Forward declarations for SPU_Sweep operations; defined further down. */
 static INLINE void SPU_Sweep_Power(SPU_Sweep *sweep);
 static INLINE void SPU_Sweep_WriteControl(SPU_Sweep *sweep, uint16_t value);
