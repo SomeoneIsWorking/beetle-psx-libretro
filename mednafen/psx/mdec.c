@@ -772,11 +772,16 @@ void MDEC_Run(int32_t clocks)
 {
    static const unsigned MDRPhaseBias = 0 + 1;
 
-   ClockCounter += clocks;
-
-   if(ClockCounter > EventCycles)
-      ClockCounter = EventCycles;
-
+   /* psxport: the unbounded native pump can hand us another 0x40000000 clocks while a large
+    * budget is still parked, and an int32 `+=` wraps to a NEGATIVE ClockCounter before the
+    * EventCycles ceiling comparison sees it. A negative counter wedges the state machine at
+    * the case 7 budget gate (ClockCounter > 0 never passes) with a finished block stuck in
+    * PixelBuffer, so the last macroblock never flushes. Saturate the add (EventCycles is a
+    * positive ceiling, so nc can never go below zero here) so the budget only ever clamps up. */
+   {
+      int64_t nc = (int64_t)ClockCounter + clocks;
+      ClockCounter = (nc > EventCycles) ? EventCycles : (int32_t)nc;
+   }
    switch(MDRPhase + MDRPhaseBias)
    {
       for(;;)
