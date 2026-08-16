@@ -82,26 +82,54 @@ typedef struct
 // the macros below keep every existing REG/CR/DR/FLAGS reference in this file unchanged. Bound per core
 // via GTE_BindState (gte_beetle.cpp) so two Cores keep SEPARATE GTE state. See gte_state.h.
 #include "gte_state.h"
-/* The selected register file is execution context, not process state.  Native producers may run an
- * isolated GTE operation while another Core remains bound on this or another host thread. */
-#if defined(_MSC_VER)
-#define GTE_THREAD_LOCAL __declspec(thread)
-#else
-#define GTE_THREAD_LOCAL _Thread_local
-#endif
-static GTE_THREAD_LOCAL GteRegs gte_default_regs;
-static GTE_THREAD_LOCAL GteRegs *gte_cur;
-static GTE_THREAD_LOCAL unsigned gte_isolated_depth;
+/* THE PSX GTE IS VANILLA. One GTE, one register file, single-threaded, exactly as the console — that
+ * is the whole contract (USER, 2026-08-16: "we preserve PSX GTE as is ... PSX GTE should work as it
+ * does in vanilla"). The per-instance binding below exists for ONE reason only: SBS runs two Cores, and
+ * each Core is its own console, so each gets its own register file. Which Core is bound is guest
+ * execution state, never host-thread state.
+ *
+ * Do not make any of this _Thread_local again. Guest code legitimately migrates across host threads:
+ * the scheduler gives each PSX task a Coro and Coro::start spawns a real std::thread. It stays
+ * single-threaded in the sense that matters — Coro is a strict ping-pong with exactly one side
+ * runnable, and SBS/dualcore step their cores sequentially — so the guest never runs concurrently with
+ * itself. But it does not stay on ONE thread. Binding per-thread therefore unbinds the GTE from the
+ * guest: a task fiber saw gte_cur == NULL, fell back to its own zeroed gte_default_regs whose CR/DR are
+ * NULL (only GTE_BindState/GTE_Power set those), and the first guest GTE write on that fiber stored
+ * through NULL. That is the 2026-08-14..08-16 window in which PSXPORT_ORACLE=1 segfaulted in every 3D
+ * scene (8 of 9 replays in Tomba2Engine's library), since ORACLE's GATE component runs the recompiled
+ * guest bodies inside the fiber rather than intercepting them with natives on the scheduler thread.
+ * Initialising the fallback would only have made it quieter and worse: the fiber would run guest
+ * geometry against a PRIVATE register file while the Core's real GTE state sat on another thread, and
+ * Coro allocates a fresh thread per task start, so that file would be re-zeroed on every restart.
+ *
+ * The premise the thread-locality was added for is one the port forbids outright: NATIVE PRODUCERS DO
+ * NOT TOUCH THE GTE. The native renderer builds its picture from game state in float, independently,
+ * while the PSX renderer runs underneath (psxport CLAUDE.md, "NO GTE compose, NO gte_op for render").
+ * Nothing in runtime/ outside this file's own wrappers issues a GTE op, so there was never a second
+ * agent that needed a second binding. Every other per-instance binder in the runtime (spu_bind,
+ * mdec_bind, xa_bind, ProjParams::bind, Pgxp::bind, ProjPrim::bind) is a process-global static on
+ * exactly this reasoning; if that ever has to change it changes for all six together, not here alone.
+ * Gate: tests/test_gte_cross_thread.cpp. */
+#define CR_OFFSET 32   /* hoisted above gte_current_regs, which now initialises CR */
+static GteRegs gte_default_regs;
+static GteRegs *gte_cur = &gte_default_regs;
+static unsigned gte_isolated_depth;
 static INLINE GteRegs *gte_current_regs(void)
 {
    if(!gte_cur)
-      gte_cur = &gte_default_regs;
+   {
+      /* Unreachable with the initialiser above, and kept self-consistent on purpose: a fallback that
+       * hands back a register file with NULL CR/DR turns "nobody bound" into a NULL store rather than
+       * into wrong-but-safe reads. Never return a half-initialised file. */
+      gte_cur     = &gte_default_regs;
+      gte_cur->DR = gte_cur->REG;
+      gte_cur->CR = gte_cur->REG + CR_OFFSET;
+   }
    return gte_cur;
 }
 #define REG   (gte_current_regs()->REG)
 #define CR    (gte_current_regs()->CR)
 #define DR    (gte_current_regs()->DR)
-#define CR_OFFSET 32
 
 /* Three 3x3 signed 4.12 matrices: rotation (CR[0]), light (CR[8]), and color (CR[16]) */
 
@@ -259,6 +287,12 @@ void GTE_BindState(GteRegs* s)
 }
 GteRegs* GTE_CurState(void) { return gte_current_regs(); }
 
+/* TEST-ONLY (psxport). Runs one GTE op against a scratch register file and restores the caller's
+ * binding. Its only users are unit tests that differentially validate the GTE math itself
+ * (tests/test_gte_isolated.cpp, tests/test_native_projection.cpp, spyro/tests/test_actor_model_codec.cpp);
+ * grep confirms ZERO shipping callers in any tree. It is NOT a facility for native producers to compute
+ * geometry with — the native renderer never issues a GTE op, by rule. Not safe to call from two host
+ * threads at once, and it does not need to be: the guest is single-threaded and tests are sequential. */
 int32_t GTE_ExecuteIsolated(GteRegs* s, uint32_t instr)
 {
    GteRegs* previous;
