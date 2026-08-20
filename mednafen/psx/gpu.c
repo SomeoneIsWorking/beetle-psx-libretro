@@ -20,6 +20,7 @@
 #include "irq.h"
 #include "timer.h"
 #include "FastFIFO.h"
+#include "psxport_gpu_census.h"
 
 #ifdef PSXPORT_HOOKS
 #include "psxport_hooks.h"
@@ -685,6 +686,12 @@ static void Command_Clip1(PS_GPU* g, const uint32_t *cb)
 static void Command_DrawingOffset(PS_GPU* g, const uint32_t *cb)
 {
    g->OffsX = sign_x_to_s32(11, (*cb & 2047));
+   /* psxport POSITIVE CONTROL (PSXPORT_GPU_BEETLE_SELFTEST): shift every primitive beetle draws by
+      one pixel. Unlike a dither or blend-mode perturbation this is UNCONDITIONAL -- it does not
+      depend on the game setting a texture-page bit -- so any frame that draws at all MUST come out
+      different. A control that can legitimately produce "no difference" cannot distinguish a working
+      comparison from a dead one, which is the entire job. Zero when not self-testing. */
+   g->OffsX += psxport_gpu_selftest_bias;
    g->OffsY = sign_x_to_s32(11, ((*cb >> 11) & 2047));
 }
 
@@ -1312,6 +1319,35 @@ void GPU_ResetTS(void)
 }
 
 
+/* psxport: see psxport_gpu_census.h. Reset by the oracle adapter at each frame boundary. */
+unsigned long psxport_gpu_census[PGC_N];
+int psxport_gpu_selftest_bias = 0;   /* see the DrawingOffset handler */
+
+/* psxport: words still sitting unconsumed in the blitter FIFO. GPU_BlitterFIFO is file-static and
+   the oracle adapter must be able to say "N words were fed but M are still queued" at a frame
+   boundary -- otherwise a stalled FIFO looks exactly like a complete feed. */
+unsigned long psxport_gpu_fifo_depth(void)
+{
+   return (unsigned long)GPU_BlitterFIFO.in_count;
+}
+
+/* psxport: GRANT UNBOUNDED DRAW TIME.
+ *
+ * beetle models the GPU's draw-time budget (DrawTimeAvail) so that a real CPU can be stalled
+ * realistically against a real GPU. The oracle has neither: there is no CPU to stall, no timing to
+ * be accurate about, and no scanout being raced. Every unit of that budget it declines to spend is
+ * therefore PURE LOSS -- ProcessFIFO returns early, the FIFO backs up, and GPU_WriteCB then silently
+ * DISCARDS words (measured: 117,804 starved dispatches and 84,335 words dropped over 1,120 frames).
+ *
+ * So this is not a tuned constant papering over starvation; it removes a model the oracle has no use
+ * for. The budget is topped up rather than disabled outright so the ordinary emulator path, which
+ * shares this file, is untouched when the oracle is off.
+ */
+void psxport_gpu_grant_drawtime(void)
+{
+   GPU.DrawTimeAvail = 0x20000000;   /* far above any single frame's command cost */
+}
+
 static void ProcessFIFO(uint32_t in_count)
 {
    uint32_t CB[0x10], InData;
@@ -1365,14 +1401,20 @@ static void ProcessFIFO(uint32_t in_count)
 
       case INCMD_QUAD:
          if(GPU.DrawTimeAvail < 0)
+         {
+            psxport_gpu_census[PGC_STARVED]++;
             return;
+         }
 
          command_len      = 1 + (bool)(cc & 0x4) + (bool)(cc & 0x10);
          read_fifo = true;
          break;
       case INCMD_PLINE:
          if(GPU.DrawTimeAvail < 0)
+         {
+            psxport_gpu_census[PGC_STARVED]++;
             return;
+         }
 
          command_len        = 1 + (bool)(GPU.InCmd_CC & 0x10);
 
@@ -1394,11 +1436,31 @@ static void ProcessFIFO(uint32_t in_count)
       command_len = command->len;
 
       if(GPU.DrawTimeAvail < 0 && !command->ss_cmd)
+      {
+         psxport_gpu_census[PGC_STARVED]++;
          return;
+      }
    }
 
    if(in_count < command_len)
       return;
+
+   /* psxport census: this command WILL now consume its operands and run. Classify it here rather
+      than at the call sites below, so the count is of what beetle dispatched, not of what any one
+      branch happened to reach. Continuation packets (INCMD_QUAD's second triangle, polyline
+      segments) count as their own dispatch -- they are separate rasteriser calls. */
+   {
+      unsigned long *pgc = psxport_gpu_census;
+      pgc[PGC_CMDS_DISPATCHED]++;
+      if      (cc >= 0x20 && cc <= 0x3F) pgc[read_fifo ? PGC_POLY_CONT : PGC_POLY]++;
+      else if (cc >= 0x40 && cc <= 0x5F) pgc[PGC_LINE]++;
+      else if (cc >= 0x60 && cc <= 0x7F) pgc[PGC_SPRITE]++;
+      else if (cc >= 0x80 && cc <= 0xDF) pgc[PGC_XFER]++;
+      else if (cc == 0x02)               pgc[PGC_FILL]++;
+      else if (cc >= 0xE1 && cc <= 0xE6) pgc[PGC_STATE]++;
+      else if (cc == 0x00)               pgc[PGC_NOP0]++;
+      else                             { pgc[PGC_NOP]++; pgc[PGC_NOP_LAST] = cc; }
+   }
 
    for (i = 0; i < command_len; i++)
    {
@@ -1437,6 +1499,8 @@ static void ProcessFIFO(uint32_t in_count)
 #endif
       if (command->func[GPU.abr][GPU.TexMode])
          command->func[GPU.abr][GPU.TexMode | (GPU.MaskEvalAND ? 0x4 : 0x0)](&GPU, CB);
+      else if (cc >= 0x20 && cc <= 0x7F)
+         psxport_gpu_census[PGC_NULL_FUNC]++;   /* a DRAW that found no rasteriser -- see the header */
    }
 }
 
@@ -1445,10 +1509,16 @@ static INLINE void GPU_WriteCB(uint32_t InData, uint32_t addr)
    if(GPU_BlitterFIFO.in_count >= 0x10
       && (GPU.InCmd != INCMD_NONE || 
       (GPU_BlitterFIFO.in_count - 0x10) >= Commands[FastFIFO_Peek(&GPU_BlitterFIFO) >> 24].fifo_fb_len))
+   {
+      /* psxport: beetle DISCARDS the word here. Real hardware stalls the CPU instead, so anything
+         counted in PGC_WORDS_DROPPED is data the oracle was never shown. */
+      psxport_gpu_census[PGC_WORDS_DROPPED]++;
       return;
+   }
 
    if(PGXP_enabled())
       PGXP_WriteFIFO(ReadMem(addr), GPU_BlitterFIFO.write_pos);
+   psxport_gpu_census[PGC_WORDS_ACCEPTED]++;
    FastFIFO_Write(&GPU_BlitterFIFO, InData);
 
    if(GPU_BlitterFIFO.in_count && GPU.InCmd != INCMD_FBREAD)
