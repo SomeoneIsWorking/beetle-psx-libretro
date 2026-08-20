@@ -1453,7 +1453,7 @@ static void ProcessFIFO(uint32_t in_count)
       unsigned long *pgc = psxport_gpu_census;
       pgc[PGC_CMDS_DISPATCHED]++;
       if      (cc >= 0x20 && cc <= 0x3F) pgc[read_fifo ? PGC_POLY_CONT : PGC_POLY]++;
-      else if (cc >= 0x40 && cc <= 0x5F) pgc[PGC_LINE]++;
+      else if (cc >= 0x40 && cc <= 0x5F) pgc[read_fifo ? PGC_LINE_CONT : PGC_LINE]++;
       else if (cc >= 0x60 && cc <= 0x7F) pgc[PGC_SPRITE]++;
       else if (cc >= 0x80 && cc <= 0xDF) pgc[PGC_XFER]++;
       else if (cc == 0x02)               pgc[PGC_FILL]++;
