@@ -42,10 +42,10 @@ enum {
    PGC_XFER,               /* 0x80..0xDF dispatched (FBCopy / FBWrite / FBRead)                  */
    PGC_FILL,               /* 0x02 FBFill                                                        */
    PGC_STATE,              /* 0xE1..0xE6 draw-mode / clip / offset / mask                         */
-   PGC_NOP0,               /* opcode 0x00 -- a LEGITIMATE no-op. Games pad OTs with these and the
-                              guest sends them by the thousand, so it must not be confused with a
-                              word beetle failed to understand. Counted, never warned about.      */
-   PGC_NOP,                /* an opcode beetle has NO command for, EXCLUDING 0x00 -- a real
+   PGC_NOP0,               /* opcodes 0x00 (NOP) and 0x01 (Clear Cache) -- LEGITIMATE no-ops. Games
+                              pad OTs with 0x00 and issue 0x01 during normal rendering, so neither
+                              may be confused with a word beetle failed to understand.             */
+   PGC_NOP,                /* an opcode beetle has NO command for, EXCLUDING 0x00/0x01 -- a real
                               primitive landing here means the tee mangled the word, not that the
                               game drew nothing.                                                  */
    PGC_NOP_LAST,           /* the most recent such opcode, so the warning can NAME it rather than

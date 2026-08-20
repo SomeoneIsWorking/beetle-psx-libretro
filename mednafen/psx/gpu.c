@@ -1458,7 +1458,7 @@ static void ProcessFIFO(uint32_t in_count)
       else if (cc >= 0x80 && cc <= 0xDF) pgc[PGC_XFER]++;
       else if (cc == 0x02)               pgc[PGC_FILL]++;
       else if (cc >= 0xE1 && cc <= 0xE6) pgc[PGC_STATE]++;
-      else if (cc == 0x00)               pgc[PGC_NOP0]++;
+      else if (cc == 0x00 || cc == 0x01) pgc[PGC_NOP0]++;
       else                             { pgc[PGC_NOP]++; pgc[PGC_NOP_LAST] = cc; }
    }
 
