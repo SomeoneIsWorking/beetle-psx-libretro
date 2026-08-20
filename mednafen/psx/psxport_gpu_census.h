@@ -33,7 +33,11 @@ enum {
                               two triangles and dispatches the second separately, so counting it as
                               a primitive double-counts every quad. Measured: 390 "polys" for 195
                               real ones, which read as a lossy feed until it was split out.        */
-   PGC_LINE,               /* 0x40..0x5F dispatched                                              */
+   PGC_LINE,               /* 0x40..0x5F dispatched as a NEW command                              */
+   PGC_LINE_CONT,          /* a POLYLINE's continuation packet. Same trap as PGC_POLY_CONT: beetle
+                              dispatches every segment of a polyline separately, so counting them as
+                              primitives over-counts a producer that submits one polyline. Measured:
+                              6 line dispatches for 2 polylines made a complete feed read as +4.    */
    PGC_SPRITE,             /* 0x60..0x7F dispatched                                              */
    PGC_XFER,               /* 0x80..0xDF dispatched (FBCopy / FBWrite / FBRead)                  */
    PGC_FILL,               /* 0x02 FBFill                                                        */
