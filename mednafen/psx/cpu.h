@@ -158,6 +158,8 @@ void              CPU_AssertIRQ_method(PS_CPU *self, unsigned which, bool assert
 void              CPU_SetHalt_method  (PS_CPU *self, bool status);
 void              CPU_SetBIU     (PS_CPU *self, uint32_t val);
 uint32_t          CPU_GetBIU     (PS_CPU *self);
+uint32_t          CPU_GetCOP0    (unsigned reg);
+void              CPU_SetCOP0    (unsigned reg, uint32_t value);
 int               CPU_StateAction(PS_CPU *self, StateMem *sm, const unsigned load, const bool data_only);
 #ifdef HAVE_LIGHTREC
 void              CPU_LightrecClear_method(PS_CPU *self, uint32_t addr, uint32_t size);

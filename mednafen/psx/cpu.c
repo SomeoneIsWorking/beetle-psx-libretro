@@ -309,6 +309,19 @@ void CPU_LightrecClear(uint32_t addr, uint32_t size)
 
 const uint8_t *PSX_LoadExpansion1(void);
 
+uint32_t CPU_GetCOP0(unsigned reg)
+{
+   return reg < 32 ? cpu_CP0.Regs[reg] : 0;
+}
+
+void CPU_SetCOP0(unsigned reg, uint32_t value)
+{
+   if(reg >= 32)
+      return;
+   cpu_CP0.Regs[reg] = value;
+   CPU_RecalcIPCache();
+}
+
 #ifdef PSXPORT_HOOKS
 uint32_t* psxport_cpu_gpr(void)
 {
@@ -338,17 +351,14 @@ void psxport_cpu_set_pc(uint32_t pc)
    interpreter sees the updated SR/CAUSE immediately. */
 uint32_t psxport_cpu_cop0(int reg)
 {
-   if (reg < 0 || reg >= 32)
-      return 0;
-   return cpu_CP0.Regs[reg];
+   return reg < 0 ? 0 : CPU_GetCOP0((unsigned)reg);
 }
 
 void psxport_cpu_set_cop0(int reg, uint32_t v)
 {
-   if (reg < 0 || reg >= 32)
+   if (reg < 0)
       return;
-   cpu_CP0.Regs[reg] = v;
-   CPU_RecalcIPCache();
+   CPU_SetCOP0((unsigned)reg, v);
 }
 #endif
 
