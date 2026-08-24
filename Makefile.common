@@ -206,6 +206,7 @@ endif
                   $(MEDNAFEN_DIR)/video/Deinterlacer.c \
                   $(CORE_DIR)/input.c \
                   $(CORE_EMU_DIR)/dma.c \
+                  $(CORE_EMU_DIR)/dma_dpcr.c \
                   $(CORE_EMU_DIR)/gpu_polygon_sub.c \
                   $(CORE_EMU_DIR)/gte.c \
                   $(CORE_EMU_DIR)/irq.c \

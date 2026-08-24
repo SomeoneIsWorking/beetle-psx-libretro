@@ -33,6 +33,7 @@
 #include "mdec.h"
 #include "gpu.h"
 #include "dma.h"
+#include "dma_dpcr.h"
 #ifdef PSXPORT_HOOKS
 #include <stdio.h>
 #include "psxport_hooks.h"
@@ -78,7 +79,6 @@ enum
 extern int32_t EventCycles;
 static int32_t DMACycleCounter;
 
-static uint32_t DMAControl;         /* DMA control register */
 static uint32_t DMAIntControl;
 static uint8_t DMAIntStatus;
 static bool IRQOut;                 /* IRQ enable for individual channels */
@@ -122,7 +122,7 @@ void DMA_Power(void)
 
    DMACycleCounter = EventCycles;
 
-   DMAControl = 0;
+   DMA_DPCR_Power();
    DMAIntControl = 0;
    DMAIntStatus = 0;
    RecalcIRQOut();
@@ -601,6 +601,7 @@ void DMA_Write(const int32_t timestamp, uint32_t A, uint32_t V)
 {
    bool will_set_event = false;
    int ch = (A & 0x7F) >> 4;
+   const uint32_t unshifted_v = V;
 
    /* FIXME if we ever have "accurate" bus emulation */
    V <<= (A & 3) * 8;
@@ -612,7 +613,7 @@ void DMA_Write(const int32_t timestamp, uint32_t A, uint32_t V)
       case 0x0:
          if (ch == 7)
          {
-            DMAControl = V;
+            DMA_DPCR_Write(A, unshifted_v);
             RecalcHalt();
          }
          else
@@ -716,7 +717,7 @@ uint32_t DMA_Read(const int32_t timestamp, uint32_t A)
    {
       case 0x0:
          if (ch == 7)
-            ret = DMAControl;
+            ret = DMA_DPCR_SaveStateValue();
          else
             ret = DMACH[ch].BaseAddr;
          break;
@@ -749,10 +750,11 @@ uint32_t DMA_Read(const int32_t timestamp, uint32_t A)
 
 int DMA_StateAction(StateMem *sm, int load, int data_only)
 {
+   uint32_t dma_control = DMA_DPCR_SaveStateValue();
    SFORMAT StateRegs[] =
    {
       SFVAR(DMACycleCounter),
-      SFVAR(DMAControl),
+      SFVARN(dma_control, "DMAControl"),
       SFVAR(DMAIntControl),
       SFVAR(DMAIntStatus),
       SFVAR(IRQOut),
@@ -770,6 +772,9 @@ int DMA_StateAction(StateMem *sm, int load, int data_only)
    };
 
    int ret = MDFNSS_StateAction(sm, load, data_only, StateRegs, "DMA");
+
+   if (load)
+      DMA_DPCR_LoadStateValue(dma_control);
 
    return(ret);
 }
