@@ -93,9 +93,6 @@ extern PS_CPU *PSX_CPU;
 #define ORACLE_SPU_DBG() 0
 #endif
 
-uint32_t IntermediateBufferPos;
-int16_t IntermediateBuffer[4096][2];
-
 extern uint8_t spu_samples;
 
 static const int16_t FIR_Table[256][4] =
@@ -444,6 +441,8 @@ typedef struct SpuState {
    uint32_t ReverbCur;
    bool IRQAsserted;
    int32_t clock_divider;
+   uint32_t IntermediateBufferPos;
+   int16_t IntermediateBuffer[4096][2];
    uint16_t SPURAM[524288 / sizeof(uint16_t)];
 } SpuState;
 static SpuState spu_default_state;
@@ -475,6 +474,8 @@ static SpuState *spu_cur = &spu_default_state;
 #define ReverbCur    (spu_cur->ReverbCur)
 #define IRQAsserted  (spu_cur->IRQAsserted)
 #define clock_divider (spu_cur->clock_divider)
+#define IntermediateBufferPos (spu_cur->IntermediateBufferPos)
+#define IntermediateBuffer (spu_cur->IntermediateBuffer)
 #define SPURAM       (spu_cur->SPURAM)
 
 /* Per-instance binding (psxport). spu_state.h declares these for the C++ side (game.h / native_boot). */
@@ -1605,6 +1606,27 @@ void SPU_Init(void)
 
   void SPU_Kill(void)
 {
+}
+
+/* Drain mixed stereo frames from the currently bound SPU state. The output ring belongs to
+ * SpuState, not the translation unit: SBS binds one state before each core's SPU work, so two
+ * Games cannot consume one another's samples. */
+int SPU_Render(int16_t *out, int max_frames)
+{
+   uint32_t avail = IntermediateBufferPos;
+   uint32_t n = avail;
+   if (max_frames >= 0 && n > (uint32_t)max_frames)
+      n = (uint32_t)max_frames;
+
+   memcpy(out, IntermediateBuffer, (size_t)n * 2 * sizeof(int16_t));
+   if (n < avail)
+   {
+      memmove(IntermediateBuffer, &IntermediateBuffer[n], (size_t)(avail - n) * 2 * sizeof(int16_t));
+      IntermediateBufferPos = avail - n;
+   }
+   else
+      IntermediateBufferPos = 0;
+   return (int)n;
 }
 
   void SPU_Write(int32_t timestamp, uint32_t A, uint16_t V)
