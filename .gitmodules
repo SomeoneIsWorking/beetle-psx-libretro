@@ -1,0 +1,3 @@
+[submodule "deps/lightning/gnulib"]
+	path = deps/lightning/gnulib
+	url = https://github.com/coreutils/gnulib.git
