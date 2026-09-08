@@ -78,16 +78,11 @@ typedef struct
    SPU_ADSR ADSR;
 } SPU_Voice;
 
-/*
- * Audio output buffer. SPU samples are mixed into this buffer at
- * the SPU's internal 44.1 kHz rate; the libretro frontend drains
- * it once per video frame via audio_batch_cb. Sized for two
- * worst-case frames (2*882 samples in PAL) plus headroom for
- * resampler leftovers and jitter; 4096 because powers of two are
- * convenient.
- */
-extern uint32_t IntermediateBufferPos;
-extern int16_t  IntermediateBuffer[4096][2];
+/* Mixed stereo output capacity, shared by the private SPU ring and frontend drain storage. */
+enum { SPU_OUTPUT_CAPACITY = 4096 };
+
+/* Drain up to max_frames stereo frames from the currently bound SPU state. */
+int SPU_Render(int16_t *out, int max_frames);
 
 void     SPU_Init(void);
 void     SPU_Kill(void);
