@@ -442,7 +442,7 @@ typedef struct SpuState {
    bool IRQAsserted;
    int32_t clock_divider;
    uint32_t IntermediateBufferPos;
-   int16_t IntermediateBuffer[4096][2];
+   int16_t IntermediateBuffer[SPU_OUTPUT_CAPACITY][2];
    uint16_t SPURAM[524288 / sizeof(uint16_t)];
 } SpuState;
 static SpuState spu_default_state;
@@ -1499,7 +1499,7 @@ static INLINE void SPU_RunNoise(void)
          else if (accum[lr] >  32767) accum[lr] =  32767;
       }
 
-      if (IntermediateBufferPos < 4096) /* Overflow might occur in some debugger use cases. */
+      if (IntermediateBufferPos < SPU_OUTPUT_CAPACITY) /* Overflow might occur in some debugger use cases. */
       {
          for (lr = 0; lr < 2; lr++)
          {

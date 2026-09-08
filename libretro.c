@@ -5393,6 +5393,7 @@ void psxport_emulate_frame(void)
    bool updated = false;
    static int32_t rects[MEDNAFEN_CORE_GEOMETRY_MAX_H];
    EmulateSpecStruct spec = {0};
+   int16_t frame_audio[SPU_OUTPUT_CAPACITY][2];
    EmulateSpecStruct *espec;
    int32_t timestamp = 0;
    const void     *fb;
@@ -5621,8 +5622,7 @@ void psxport_emulate_frame(void)
     * and the frontend hasn't yet read the surface for display. */
    GPU_FlushDeferredScanout();
 
-   espec->SoundBufSize = IntermediateBufferPos;
-   IntermediateBufferPos = 0;
+   espec->SoundBufSize = SPU_Render(&frame_audio[0][0], SPU_OUTPUT_CAPACITY);
 
    PS_CDC_ResetTS(PSX_CDC);
    TIMER_ResetTS();
@@ -5832,7 +5832,7 @@ void psxport_emulate_frame(void)
 		   MEDNAFEN_CORE_GEOMETRY_MAX_W << (2 + upscale_shift));
 
    if (audio_batch_cb)
-      audio_batch_cb(&IntermediateBuffer[0][0], spec.SoundBufSize);
+      audio_batch_cb(&frame_audio[0][0], spec.SoundBufSize);
 
    if (GPU_get_display_possibly_dirty() || (GPU_get_display_change_count() != 0))
    {
