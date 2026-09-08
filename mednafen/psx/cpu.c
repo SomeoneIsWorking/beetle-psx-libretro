@@ -30,6 +30,9 @@
 
 #include "psx.h"
 #include "cpu.h"
+#ifdef PSX_PC_OBSERVER
+#include "pc_observer.h"
+#endif
 #include "psx_mem.h"
 
 #ifdef PSXPORT_HOOKS
@@ -1021,7 +1024,14 @@ static int32_t CPU_RunReal(PS_CPU *self, int32_t timestamp_in)
     timestamp++;
 
    #define DO_LDS() { s_cpu.GPR_full[LDWhich] = LDValue; ReadAbsorb[LDWhich] = LDAbsorb; ReadFudge = LDWhich; ReadAbsorbWhich |= LDWhich & 0x1F; LDWhich = 0x22; }
-   #define BEGIN_OPF(name) { op_##name:
+   #ifdef PSX_PC_OBSERVER
+   #define OBSERVE_OPCODE() \
+    if(MDFN_UNLIKELY(psx_observer_enabled)) \
+     CPU_ObservePC(PC, new_PC, instr, BDBT, LDWhich, LDValue, timestamp, s_cpu.GPR_full, cpu_CP0.Regs)
+   #else
+   #define OBSERVE_OPCODE() do {} while (0)
+   #endif
+   #define BEGIN_OPF(name) { op_##name: OBSERVE_OPCODE();
    #define END_OPF goto OpDone; }
 
    #define DO_BRANCH(arg_cond, arg_offset, arg_mask, arg_dolink, arg_linkreg)\
@@ -2852,7 +2862,7 @@ static int32_t CPU_RunReal(PS_CPU *self, int32_t timestamp_in)
     //
     // Mednafen special instruction
     //
-    BEGIN_OPF(INTERRUPT);
+    { op_INTERRUPT: /* Interrupt/halt dispatch is not a guest instruction observation. */
 	if(Halted)
 	{
 	 goto SkipNPCStuff;
@@ -2929,6 +2939,7 @@ int32_t CPU_Run(PS_CPU *self, int32_t timestamp_in)
    return CPU_RunReal(self, timestamp_in);
 }
 
+#undef OBSERVE_OPCODE
 #undef BEGIN_OPF
 #undef END_OPF
 #undef MK_OPF

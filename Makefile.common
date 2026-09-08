@@ -180,6 +180,12 @@ endif
                 $(CORE_EMU_DIR)/frontio.c \
                 $(CORE_EMU_DIR)/gpu.c
 
+# Read-only diagnostics are absent from ordinary CPU builds.
+ifeq ($(PSX_PC_OBSERVER),1)
+   FLAGS += -DPSX_PC_OBSERVER=1
+   SOURCES_C += $(CORE_EMU_DIR)/pc_observer.c
+endif
+
    ifeq ($(NEED_TREMOR), 1)
       SOURCES_C += $(sort $(wildcard $(MEDNAFEN_DIR)/tremor/*.c))
    endif
