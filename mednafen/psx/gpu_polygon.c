@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdio.h>
 #include "beetle_psx_globals.h"
 
 /* Defined later in the same translation unit (gpu.c includes this
@@ -1527,4 +1528,3 @@ CMD_DRAWPOLY_BMGROUP_ALL(4, 1, 1)
 #undef COORD_POST_PADDING
 #undef COORD_FBS
 #undef COORD_MF_INT
-

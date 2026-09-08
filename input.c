@@ -3,6 +3,7 @@
 #include <retro_inline.h>
 #include "mednafen/mednafen-types.h"
 #include <math.h>
+#include <stdio.h>
 #include "mednafen/git.h"
 #include "mednafen/psx/frontio.h"
 #include "input.h"
