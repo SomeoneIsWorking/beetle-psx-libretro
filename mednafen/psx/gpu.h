@@ -229,6 +229,9 @@ typedef struct PS_GPU PS_GPU;
 extern "C" {
 #endif
 
+/* The one GPU instance gpu.c defines. */
+extern PS_GPU GPU;
+
 void     GPU_WriteDMA(uint32_t V, uint32_t addr);
 uint32_t GPU_ReadDMA(void);
 bool     GPU_DMACanWrite(void);
