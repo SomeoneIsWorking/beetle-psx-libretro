@@ -399,6 +399,12 @@ DEFINE_GetTexel(TM2, 2)
 /* See psx_gpu_rasterize_both_fields in beetle_psx_globals.h. */
 extern bool psx_gpu_rasterize_both_fields;
 
+/* Whether the scanline walk converts each displayed line into the output
+ * surface.  A front end that presents from its own renderer and never reads
+ * the surface clears it: the walk keeps its timing, line widths and line
+ * hook (called with NULL pixels, as the 480i "Off" path already does). */
+extern bool psx_gpu_scanout_pixels;
+
 /*
  * Returns true if the real PS1 GPU's dfe-skip would have rejected
  * native-row y for the current display mode.  Identical to

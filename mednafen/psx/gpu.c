@@ -2239,7 +2239,7 @@ int32_t GPU_Update(const int32_t sys_timestamp)
 
                GPU.LineWidths[dest_line] = dmw;
 
-               if (rhi_intf_is_type() == RHI_SOFTWARE)
+               if (rhi_intf_is_type() == RHI_SOFTWARE && psx_gpu_scanout_pixels)
                {
                   /* Convert the necessary variables to the upscaled version */
                   uint32_t x;

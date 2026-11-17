@@ -8,6 +8,7 @@ uint8_t widescreen_hack_aspect_ratio_setting;
 uint8_t psx_gpu_upscale_shift;
 uint8_t psx_gpu_upscale_shift_hw;
 bool psx_gpu_rasterize_both_fields = false;
+bool psx_gpu_scanout_pixels = true;
 int line_render_mode;
 int filter_mode;
 int crop_overscan = 0;
