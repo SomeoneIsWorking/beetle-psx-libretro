@@ -303,7 +303,14 @@ static void Command_DrawLine_##SUFFIX(PS_GPU *gpu, const uint32_t *cb) \
    if (delta_y >= 512) \
       return; \
    GPU_LINE_RHI_PUSH_HOOK(gpu, points, BM_VAL, MASKEVAL_LIT); \
-   if (rhi_intf_has_software_renderer()) \
+   if (gpu->defer_log) \
+      DeferNoteDraw(gpu, \
+            points[0].x < points[1].x ? points[0].x : points[1].x, \
+            points[0].y < points[1].y ? points[0].y : points[1].y, \
+            (points[0].x > points[1].x ? points[0].x : points[1].x) + 1, \
+            (points[0].y > points[1].y ? points[0].y : points[1].y) + 1, \
+            false, 0, 0, 0, ((BM_VAL) >= 0) || (MASKEVAL_LIT)); \
+   if (rhi_intf_has_software_renderer() && !gpu->no_pixels) \
       DrawLine_g##GOURAUD_LIT##_##BM_TAG##_ME##MASKEVAL_LIT(gpu, points); \
 }
 

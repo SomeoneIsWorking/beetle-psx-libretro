@@ -1453,7 +1453,9 @@ static void Command_DrawPolygon_##SUFFIX(PS_GPU *gpu, const uint32_t *cb) \
             } \
          } \
       } \
-      if (rhi_intf_has_software_renderer()) \
+      if (gpu->defer_log) \
+         DeferNoteTriangle(gpu, vertices, (TEXTURED_LIT), (MO_LIT), clut_x, clut_y, ((BM_VAL) >= 0) || (ME_LIT)); \
+      if (rhi_intf_has_software_renderer() && !gpu->no_pixels) \
       { \
          /* Perspective-correct texturing for the SW rasteriser. \
           * Eligible when this primitive came in through the PGXP \

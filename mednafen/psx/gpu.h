@@ -222,6 +222,12 @@ struct PS_GPU
    wrestle a variable-sized struct.
    */
    uint16_t *vram;
+
+   /* Deferred pixels (gpu_defer.c): the instance the guest talks to logs every command and draws no pixels
+    * (defer_log and no_pixels); a second instance sharing vram draws them later, in order, when something
+    * reads VRAM. Neither is saved: they describe the front end's arrangement, not the machine. */
+   bool defer_log;
+   bool no_pixels;
 };
 typedef struct PS_GPU PS_GPU;
 
@@ -241,6 +247,14 @@ int32_t  GPU_GetScanlineNum(void);
 /* Used by rhi_lib_gl.c to access the VRAM contents and
  * to drive state restore points. */
 uint16_t *GPU_get_vram(void);
+
+/* Deferred pixels: while on, drawing commands are logged instead of drawn, and drawn in order when VRAM is
+ * read. A command whose pixels a later fill overwrites before anything reads them is never drawn.
+ * GPU_get_vram() then returns VRAM as of the last settle: call GPU_SettlePixels for the rect about to be
+ * read (x, y, w, h wrap on the 1024x512 VRAM), or GPU_SettleAllPixels. Save states settle on their own. */
+void GPU_SetDeferPixels(bool on);
+void GPU_SettlePixels(int32_t x, int32_t y, int32_t w, int32_t h);
+void GPU_SettleAllPixels(void);
 void     GPU_RestoreStateP1(bool load);
 void     GPU_RestoreStateP2(bool load);
 void     GPU_RestoreStateP3(void);

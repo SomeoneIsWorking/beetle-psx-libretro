@@ -530,7 +530,10 @@ static void Command_DrawSprite_##SUFFIX(PS_GPU *gpu, const uint32_t *cb) \
    x = sign_x_to_s32(11, x + gpu->OffsX); \
    y = sign_x_to_s32(11, y + gpu->OffsY); \
    GPU_SPR_RHI_PUSH_HOOK(gpu, x, y, w, h, u, v, color, clut, T_LIT, TM_LIT, MO_LIT, BM_VAL, ME_LIT); \
-   if (!rhi_intf_has_software_renderer()) \
+   if (gpu->defer_log) \
+      DeferNoteDraw(gpu, x, y, x + w, y + h, (T_LIT), (MO_LIT), clut & 0x3F0, (clut >> 10) & 0x1FF, \
+            ((BM_VAL) >= 0) || (ME_LIT)); \
+   if (!rhi_intf_has_software_renderer() || gpu->no_pixels) \
       return; \
    SPR_DISPATCH_DRAW(TM_LIT, BM_TAG, MO_LIT, ME_LIT, T_LIT) \
 }

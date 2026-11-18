@@ -62,6 +62,12 @@ static void texel_put(uint32_t x, uint32_t y, uint16_t v);
 
 #include "gpu_common.h"
 
+/* gpu_defer.c's notes, called from the drawing handlers below. */
+static void DeferNoteDraw(PS_GPU *g, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+      bool textured, unsigned tex_mode, uint32_t clut_x, uint32_t clut_y, bool reads_destination);
+static void DeferNoteTriangle(PS_GPU *g, const tri_vertex *v, bool textured, unsigned tex_mode,
+      uint32_t clut_x, uint32_t clut_y, bool reads_destination);
+
 #include "gpu_polygon.c"
 #include "gpu_sprite.c"
 #include "gpu_line.c"
@@ -417,6 +423,8 @@ static void Command_IRQ(PS_GPU* g, const uint32_t *cb)
    IRQ_Assert(IRQ_GPU, g->IRQPending);
 }
 
+#include "gpu_defer.c"
+
 /* Special RAM write mode(16 pixels at a time), */
 /* does *not* appear to use mask drawing environment settings. */
 static void Command_FBFill(PS_GPU* gpu, const uint32_t *cb)
@@ -430,9 +438,11 @@ static void Command_FBFill(PS_GPU* gpu, const uint32_t *cb)
    int32_t destY             = (cb[1] >> 16) & 0x3FF;
    int32_t width             = (((cb[2] >> 0) & 0x3FF) + 0xF) & ~0xF;
    int32_t height            = (cb[2] >> 16) & 0x1FF;
-   const bool sw             = rhi_intf_has_software_renderer();
+   const bool sw             = rhi_intf_has_software_renderer() && !gpu->no_pixels;
 
    gpu->DrawTimeAvail       -= 46; /* Approximate */
+   if (gpu->defer_log)
+      DeferNoteWrite(DeferMakeRect(destX, destY, width, height));
 
    for(y = 0; y < height; y++)
    {
@@ -522,12 +532,17 @@ static void Command_FBCopy(PS_GPU* g, const uint32_t *cb)
    InvalidateTexCache(g);
 
    g->DrawTimeAvail -= (width * height) * 2;
+   if (g->defer_log)
+   {
+      DeferNoteRead(DeferMakeRect(sourceX, sourceY, width, height));
+      DeferNoteWrite(DeferMakeRect(destX, destY, width, height));
+   }
 
    /* Run the in-VRAM copy only when something will actually read
     * back from GPU.vram.  Hardware backends do the copy themselves
     * via rhi_intf_copy_rect below, so the per-pixel software loop
     * would just dirty VRAM that nothing consumes. */
-   if (rhi_intf_has_software_renderer())
+   if (rhi_intf_has_software_renderer() && !g->no_pixels)
    {
       unsigned y;
       for(y = 0; y < (unsigned)height; y++)
@@ -583,6 +598,9 @@ static void Command_FBWrite(PS_GPU* g, const uint32_t *cb)
    g->FBRW_CurX = g->FBRW_X;
    g->FBRW_CurY = g->FBRW_Y;
 
+   if (g->defer_log)
+      DeferNoteWrite(DeferMakeRect((int32_t)g->FBRW_X, (int32_t)g->FBRW_Y, (int32_t)g->FBRW_W, (int32_t)g->FBRW_H));
+
    tt_log("gpu Command_FBWrite rect=(%u,%u %ux%u) sw=%d mask_eval=%d mask_set=%d\n",
          (unsigned)g->FBRW_X, (unsigned)g->FBRW_Y,
          (unsigned)g->FBRW_W, (unsigned)g->FBRW_H,
@@ -618,6 +636,9 @@ static void Command_FBRead(PS_GPU* g, const uint32_t *cb)
 
    g->FBRW_CurX = g->FBRW_X;
    g->FBRW_CurY = g->FBRW_Y;
+
+   if (g->defer_log)
+      GPU_SettlePixels((int32_t)g->FBRW_X, (int32_t)g->FBRW_Y, (int32_t)g->FBRW_W, (int32_t)g->FBRW_H);
 
    tt_log("gpu Command_FBRead rect=(%u,%u %ux%u) sw=%d\n",
          (unsigned)g->FBRW_X, (unsigned)g->FBRW_Y,
@@ -1203,6 +1224,8 @@ static void GPU_SoftReset(void) /* Control command 0x00 */
 
 void GPU_Power(void)
 {
+   if (Defer.on)
+      DeferClear();
    memset(GPU.vram, 0, 512 * 1024 * UPSCALE(&GPU) * UPSCALE(&GPU) * sizeof(*GPU.vram));
 
    memset(GPU.CLUT_Cache, 0, sizeof(GPU.CLUT_Cache));
@@ -1311,6 +1334,13 @@ void GPU_Power(void)
 
    IRQ_Assert(IRQ_VBLANK, GPU.InVBlank);
    TIMER_SetVBlank(GPU.InVBlank);
+
+   if (Defer.on)
+   {
+      *Defer.pixels = GPU;
+      Defer.pixels->defer_log = false;
+      Defer.pixels->no_pixels = false;
+   }
 }
 
 void GPU_ResetTS(void)
@@ -1348,6 +1378,8 @@ void psxport_gpu_grant_drawtime(void)
    GPU.DrawTimeAvail = 0x20000000;   /* far above any single frame's command cost */
 }
 
+#include "gpu_defer_replay.c"
+
 static void ProcessFIFO(uint32_t in_count)
 {
    uint32_t CB[0x10], InData;
@@ -1356,7 +1388,6 @@ static void ProcessFIFO(uint32_t in_count)
    uint32_t cc            = GPU.InCmd_CC;
    const CTEntry *command = &Commands[cc];
    bool read_fifo         = false;
-   bool sw                = rhi_intf_has_software_renderer();
 
    switch (GPU.InCmd)
    {
@@ -1365,38 +1396,11 @@ static void ProcessFIFO(uint32_t in_count)
          break;
       case INCMD_FBWRITE:
          InData = FastFIFO_Read(&GPU_BlitterFIFO);
-
-         for(i = 0; i < 2; i++)
-         {
-            /* Cannot rely on mask bit if we don't have SW renderer, HW renderer will
-             * perform masking. */
-            bool fetch = false;
-            if (sw)
-                fetch = texel_fetch(&GPU, GPU.FBRW_CurX & 1023, GPU.FBRW_CurY & 511) & GPU.MaskEvalAND;
-
-            if (!fetch)
-               texel_put(GPU.FBRW_CurX & 1023, GPU.FBRW_CurY & 511, InData | GPU.MaskSetOR);
-
-            GPU.FBRW_CurX++;
-            if(GPU.FBRW_CurX == (GPU.FBRW_X + GPU.FBRW_W))
-            {
-               GPU.FBRW_CurX = GPU.FBRW_X;
-               GPU.FBRW_CurY++;
-               if(GPU.FBRW_CurY == (GPU.FBRW_Y + GPU.FBRW_H))
-               {
-                  /* Upload complete, send over to RHI */
-                  rhi_intf_load_image(
-                        GPU.FBRW_X, GPU.FBRW_Y,
-                        GPU.FBRW_W, GPU.FBRW_H,
-                        GPU.vram,
-                        GPU.MaskEvalAND != 0,
-                        GPU.MaskSetOR != 0);
-                  GPU.InCmd = INCMD_NONE;
-                  break;   /* Break out of the for() loop. */
-               }
-            }
-            InData >>= 16;
-         }
+         if (GPU.defer_log)
+            DeferUploadWord(InData);
+         FBWriteWord(&GPU, InData);
+         if (GPU.defer_log && GPU.InCmd != INCMD_FBWRITE)
+            DeferUploadDone();
          return;
 
       case INCMD_QUAD:
@@ -1422,6 +1426,8 @@ static void ProcessFIFO(uint32_t in_count)
          {
             FastFIFO_Read(&GPU_BlitterFIFO);
             GPU.InCmd = INCMD_NONE;
+            if (GPU.defer_log)
+               DeferPolylineEnd();
             return;
          }
 
@@ -1483,6 +1489,9 @@ static void ProcessFIFO(uint32_t in_count)
          SetTPage(&GPU, CB[4 + ((cc >> 4) & 0x1)] >> 16);
    }
 
+   if (GPU.defer_log)
+      DeferBeginCommand();
+
    if ((cc >= 0x80) && (cc <= 0x9F))
       Command_FBCopy(&GPU, CB);
    else if ((cc >= 0xA0) && (cc <= 0xBF))
@@ -1502,6 +1511,9 @@ static void ProcessFIFO(uint32_t in_count)
       else if (cc >= 0x20 && cc <= 0x7F)
          psxport_gpu_census[PGC_NULL_FUNC]++;   /* a DRAW that found no rasteriser -- see the header */
    }
+
+   if (GPU.defer_log)
+      DeferEndCommand(cc, read_fifo, CB, command_len);
 }
 
 static INLINE void GPU_WriteCB(uint32_t InData, uint32_t addr)
@@ -1544,6 +1556,7 @@ void GPU_Write(const int32_t timestamp, uint32_t A, uint32_t V)
          default:
             break;
          case 0x00:  /* Reset GPU */
+            GPU_SettleAllPixels();
             GPU_SoftReset();
             rhi_intf_set_draw_area(GPU.ClipX0, GPU.ClipY0,
                                    GPU.ClipX1, GPU.ClipY1);
@@ -1552,13 +1565,18 @@ void GPU_Write(const int32_t timestamp, uint32_t A, uint32_t V)
             rhi_intf_set_horizontal_display_range(GPU.HorizStart, GPU.HorizEnd); /* 0x200, 0xC00 set by GPU_SoftReset() */
             rhi_intf_set_vertical_display_range(GPU.VertStart, GPU.VertEnd); /* 0x10, 0x100 set by GPU_SoftReset() */
             RHI_UpdateDisplayMode();
+            if (Defer.on)
+               DeferSyncPixels();
             break;
 
          case 0x01:  /* Reset command buffer */
+            GPU_SettleAllPixels();
             if(GPU.DrawTimeAvail < 0)
                GPU.DrawTimeAvail = 0;
             FastFIFO_Flush(&GPU_BlitterFIFO);
             GPU.InCmd = INCMD_NONE;
+            if (Defer.on)
+               DeferSyncPixels();
             break;
 
          case 0x02:  /* Acknowledge IRQ */
@@ -1603,7 +1621,10 @@ void GPU_Write(const int32_t timestamp, uint32_t A, uint32_t V)
             break;
 
          case 0x09:
+            GPU_SettleAllPixels();
             GPU.TexDisableAllowChange = V & 1;
+            if (Defer.on)
+               DeferSyncPixels();
             break;
 
          case 0x10:  /* GPU info(?) */
@@ -2659,6 +2680,19 @@ void GPU_RestoreStateP3(void)
 
 int GPU_StateAction(StateMem *sm, int load, int data_only)
 {
+   /* Deferred pixels: a save takes VRAM and the texture cache as the eager GPU would hold them; a load
+    * drops what was pending and starts the pixel GPU from the loaded machine. */
+   if (Defer.on)
+   {
+      if (load)
+         DeferClear();
+      else
+      {
+         GPU_SettleAllPixels();
+         memcpy(GPU.TexCache, Defer.pixels->TexCache, sizeof GPU.TexCache);
+      }
+   }
+
    GPU_RestoreStateP1(load);
 
    SFORMAT StateRegs[] =
@@ -2813,6 +2847,13 @@ int GPU_StateAction(StateMem *sm, int load, int data_only)
 
    if(load)
       GPU_RestoreStateP3();
+
+   if (load && Defer.on)
+   {
+      *Defer.pixels = GPU;
+      Defer.pixels->defer_log = false;
+      Defer.pixels->no_pixels = false;
+   }
 
    return(ret);
 }

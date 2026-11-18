@@ -281,6 +281,8 @@ static INLINE void Update_CLUT_Cache_##SUFFIX(PS_GPU *g, uint16_t raw_clut) \
          const uint32_t cxo = (raw_clut & 0x3F) << 4; \
          const uint32_t count = ((TM_VAL) ? 256 : 16); \
          unsigned i; \
+         if (g->defer_log) \
+            GPU_SettlePixels((int32_t)cxo, y, (int32_t)count, 1); \
          g->DrawTimeAvail -= count; \
          for (i = 0; i < count; i++) \
          { \
